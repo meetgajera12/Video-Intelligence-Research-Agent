@@ -12,7 +12,6 @@ from langchain_community.vectorstores import FAISS
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_core.output_parsers import PydanticOutputParser
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import TypedDict, Annotated, Any
 import operator
@@ -58,12 +57,15 @@ import re
 model = ChatGroq(
     model="openai/gpt-oss-20b",
     temperature=0,
-    max_retries=5
+    max_retries=5,
+    reasoning_effort="low"
 )
 
-def create_pydantic_chain(pydantic_model):
-    parser = PydanticOutputParser(pydantic_object=pydantic_model)
-    return model | parser, parser
+def create_structured_chain(pydantic_model):
+    return model.with_structured_output(
+        pydantic_model,
+        method="json_schema"
+    )
 
 def invoke_with_retry(runnable, prompt_input, max_attempts=5):
     for attempt in range(1, max_attempts + 1):
@@ -122,7 +124,7 @@ def QueAns_agent(state: State) -> dict:
         for doc in docs
     )
 
-    chain, parser = create_pydantic_chain(QueAns)
+    chain = create_structured_chain(QueAns)
     
     response = invoke_with_retry(
         chain,
@@ -142,8 +144,6 @@ Give answers in 5-6 lines.
 
 Context:
 {context}
-
-{parser.get_format_instructions()}
 """
             ),
             HumanMessage(
@@ -163,7 +163,7 @@ Context:
 def summary_agent(state: State) -> dict:
     transcript = state.get("video_transcript", "")[:12000]
 
-    chain, parser = create_pydantic_chain(Summary)
+    chain = create_structured_chain(Summary)
     response = invoke_with_retry(
         chain,
         [
@@ -178,8 +178,6 @@ def summary_agent(state: State) -> dict:
 
                 Transcript:
                 {transcript}
-
-                {parser.get_format_instructions()}
                 """
             )
         ]
@@ -193,7 +191,7 @@ def summary_agent(state: State) -> dict:
 def KeyPoint_agent(state: State) -> dict:
     transcript = state.get("video_transcript", "")[:12000]
 
-    chain, parser = create_pydantic_chain(Key_points)
+    chain = create_structured_chain(Key_points)
     response = invoke_with_retry(
         chain,
         [
@@ -205,8 +203,6 @@ def KeyPoint_agent(state: State) -> dict:
 
                 Transcript:
                 {transcript}
-
-                {parser.get_format_instructions()}
                 """
             )
         ]
@@ -241,7 +237,7 @@ def split_transcript_for_claims(state: State):
 # claim extracting agent
 
 def claim_chunk_agent(state: State) -> dict:
-    chain, parser = create_pydantic_chain(Claims)
+    chain = create_structured_chain(Claims)
     
     response = invoke_with_retry(
         chain,
@@ -264,7 +260,6 @@ Transcript chunk:
 
 {state["video_transcript"]}
 
-{parser.get_format_instructions()}
 """
     )
 
@@ -314,7 +309,7 @@ def fact_checker(state: State) -> dict:
     if not claims:
         return {"fact_check": []}
 
-    chain, parser = create_pydantic_chain(FactCheckResult)
+    chain = create_structured_chain(FactCheckResult)
 
     for claim in claims:
         try:
@@ -377,7 +372,6 @@ Search results:
                         + str(search_result)
                         + f"""
 
-{parser.get_format_instructions()}
 """
                     )
                 ]
@@ -403,7 +397,7 @@ Search results:
 
 def topic_agent(state: State) -> dict:
     transcript = state.get("video_transcript", "")[:12000]
-    chain, parser = create_pydantic_chain(Topics)
+    chain = create_structured_chain(Topics)
     
     try:
         response = invoke_with_retry(
@@ -432,7 +426,6 @@ Return the result using ONLY the provided structured schema.
 Transcript:
 {transcript}
 
-{parser.get_format_instructions()}
 """
                 )
             ]
@@ -453,7 +446,7 @@ def reference_agent(state: State) -> dict:
     if not topics:
         return {"references": []}
 
-    chain, parser = create_pydantic_chain(ReferenceResult)
+    chain = create_structured_chain(ReferenceResult)
 
     for topic in topics:
         try:
@@ -501,8 +494,6 @@ Rules:
   universities, government sources, textbooks,
   and reputable articles.
 - Return the most relevant sources.
-
-{parser.get_format_instructions()}
 """
             )
 
