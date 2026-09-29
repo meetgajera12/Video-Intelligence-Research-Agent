@@ -3,17 +3,17 @@ from typing import List
 
 # summary agent
 class Summary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     summary : str = Field(...,description='summary of provided youtube video transcript.')
 
 # key point agent
 class Key_points(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     KeyPoints : List[str] = Field(...,description='key points from provided youtube video transcript.')
 
 # fact check agent
 class FactCheckItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     claim: str = Field(
         description="A factual claim made in the YouTube transcript."
     )
@@ -31,12 +31,12 @@ class FactCheckItem(BaseModel):
     )
 
 class FactCheckResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     claims: List[FactCheckItem]
 
 # topic extractor agent
 class Topics(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     topics : List[str] = Field(
         description=(
             "Important concepts, subjects, technologies, methods, "
@@ -46,7 +46,7 @@ class Topics(BaseModel):
 
 # reference agent
 class ReferenceItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     topic: str = Field(
         description="The topic this reference belongs to."
     )
@@ -68,18 +68,18 @@ class ReferenceItem(BaseModel):
 
 
 class ReferenceResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     references: List[ReferenceItem]
 
 
 # Que.-Ans. agent
 class QueAns(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
     answer: str = Field(
         description="Answer to the user's question based only on the provided context."
     )
 
 # Claim agent
 class Claims(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    claims: list[str]
+    model_config = ConfigDict(extra="ignore")
+    claims: list[str]

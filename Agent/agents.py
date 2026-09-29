@@ -12,6 +12,7 @@ from langchain_community.vectorstores import FAISS
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.output_parsers import PydanticOutputParser
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import TypedDict, Annotated, Any
 import operator
@@ -60,6 +61,10 @@ model = ChatGroq(
     max_retries=5
 )
 
+def create_pydantic_chain(pydantic_model):
+    parser = PydanticOutputParser(pydantic_object=pydantic_model)
+    return model | parser, parser
+
 def invoke_with_retry(runnable, prompt_input, max_attempts=5):
     for attempt in range(1, max_attempts + 1):
         try:
@@ -73,6 +78,7 @@ def invoke_with_retry(runnable, prompt_input, max_attempts=5):
                 time.sleep(wait_time)
             else:
                 raise e
+
 
 # search tool
 search = TavilySearch(
@@ -116,14 +122,10 @@ def QueAns_agent(state: State) -> dict:
         for doc in docs
     )
 
-    runnable = model.with_structured_output(
-        QueAns,
-        method="json_schema",
-        strict=True
-    )
+    chain, parser = create_pydantic_chain(QueAns)
     
     response = invoke_with_retry(
-        runnable,
+        chain,
         [
             SystemMessage(
                 content=f"""
@@ -140,6 +142,8 @@ Give answers in 5-6 lines.
 
 Context:
 {context}
+
+{parser.get_format_instructions()}
 """
             ),
             HumanMessage(
@@ -159,9 +163,9 @@ Context:
 def summary_agent(state: State) -> dict:
     transcript = state.get("video_transcript", "")[:12000]
 
-    runnable = model.with_structured_output(Summary, method='json_schema', strict=False)
+    chain, parser = create_pydantic_chain(Summary)
     response = invoke_with_retry(
-        runnable,
+        chain,
         [
             SystemMessage(
                 content=f"""
@@ -174,6 +178,8 @@ def summary_agent(state: State) -> dict:
 
                 Transcript:
                 {transcript}
+
+                {parser.get_format_instructions()}
                 """
             )
         ]
@@ -187,9 +193,9 @@ def summary_agent(state: State) -> dict:
 def KeyPoint_agent(state: State) -> dict:
     transcript = state.get("video_transcript", "")[:12000]
 
-    runnable = model.with_structured_output(Key_points, method='json_schema', strict=False)
+    chain, parser = create_pydantic_chain(Key_points)
     response = invoke_with_retry(
-        runnable,
+        chain,
         [
             SystemMessage(
                 content=f"""
@@ -199,6 +205,8 @@ def KeyPoint_agent(state: State) -> dict:
 
                 Transcript:
                 {transcript}
+
+                {parser.get_format_instructions()}
                 """
             )
         ]
@@ -233,14 +241,10 @@ def split_transcript_for_claims(state: State):
 # claim extracting agent
 
 def claim_chunk_agent(state: State) -> dict:
-    runnable = model.with_structured_output(
-        Claims,
-        method="json_schema",
-        strict=False
-    )
+    chain, parser = create_pydantic_chain(Claims)
     
     response = invoke_with_retry(
-        runnable,
+        chain,
         f"""
 Extract objectively verifiable factual claims from this transcript
 chunk.
@@ -259,6 +263,8 @@ Rules:
 Transcript chunk:
 
 {state["video_transcript"]}
+
+{parser.get_format_instructions()}
 """
     )
 
@@ -308,9 +314,7 @@ def fact_checker(state: State) -> dict:
     if not claims:
         return {"fact_check": []}
 
-    runnable = model.with_structured_output(
-        FactCheckResult, method="json_schema", strict=False
-    )
+    chain, parser = create_pydantic_chain(FactCheckResult)
 
     for claim in claims:
         try:
@@ -320,7 +324,7 @@ def fact_checker(state: State) -> dict:
             })
 
             response = invoke_with_retry(
-                runnable,
+                chain,
                 [
                     SystemMessage(
                         content="""
@@ -371,6 +375,10 @@ Claim:
 Search results:
 """
                         + str(search_result)
+                        + f"""
+
+{parser.get_format_instructions()}
+"""
                     )
                 ]
             )
@@ -395,14 +403,14 @@ Search results:
 
 def topic_agent(state: State) -> dict:
     transcript = state.get("video_transcript", "")[:12000]
-    runnable = model.with_structured_output(Topics, method="json_schema", strict=False)
+    chain, parser = create_pydantic_chain(Topics)
     
     try:
         response = invoke_with_retry(
-            runnable,
+            chain,
             [
                 SystemMessage(
-                    content="""
+                    content=f"""
 You are a topic extraction agent.
 
 Extract important topics explicitly discussed in the transcript.
@@ -422,10 +430,10 @@ Rules:
 Return the result using ONLY the provided structured schema.
 
 Transcript:
+{transcript}
+
+{parser.get_format_instructions()}
 """
-                ),
-                HumanMessage(
-                    content=transcript
                 )
             ]
         )
@@ -445,11 +453,7 @@ def reference_agent(state: State) -> dict:
     if not topics:
         return {"references": []}
 
-    runnable = model.with_structured_output(
-        ReferenceResult,
-        method="json_schema",
-        strict=False
-    )
+    chain, parser = create_pydantic_chain(ReferenceResult)
 
     for topic in topics:
         try:
@@ -480,7 +484,7 @@ def reference_agent(state: State) -> dict:
             )
 
             response = invoke_with_retry(
-                runnable,
+                chain,
                 f"""
 Find the best reliable references for this topic.
 
@@ -497,6 +501,8 @@ Rules:
   universities, government sources, textbooks,
   and reputable articles.
 - Return the most relevant sources.
+
+{parser.get_format_instructions()}
 """
             )
 
