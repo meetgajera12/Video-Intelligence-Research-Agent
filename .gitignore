@@ -1,0 +1,13 @@
+__pycache__/
+myenv/
+.env
+
+.ipynb_checkpoints/
+.vscode/
+
+*.log
+*.pkl
+*.pickle
+*.joblib
+
+frontend
