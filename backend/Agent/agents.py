@@ -242,25 +242,81 @@ def claim_chunk_agent(state: State) -> dict:
     response = invoke_with_retry(
         chain,
         f"""
-You are a Claim Extraction Agent.
+You are a factual claim extraction system.
 
-Analyze the provided video transcript and extract all distinct factual claims that can be independently verified.
+Your task is to extract ONLY objectively verifiable factual claims that are explicitly stated in the provided transcript.
 
-A claim must:
-- State a specific fact or assertion.
-- Be supported by the provided text.
-- Be independently verifiable.
-- Preserve the original meaning.
+A factual claim is a statement that asserts something about a person, organization, event, object, process, scientific fact, historical fact, technical concept, numerical value, relationship, or other real-world matter that could potentially be verified using reliable external evidence.
 
-Do not:
-- Add information or assumptions.
-- Rewrite claims to change their meaning.
-- Extract opinions, questions, instructions, or vague statements.
-- Merge unrelated claims.
+STRICT RULES:
 
-When a sentence contains multiple factual assertions, extract them as separate claims.
+1. Extract only claims explicitly stated in the transcript.
+   - Do not infer, interpret, assume, or complete missing information.
+   - Do not use your own knowledge to create or modify claims.
 
-Transcript chunk:
+2. The extracted claim must be a complete factual statement.
+   - Preserve the meaning of the original statement.
+   - Rewrite only enough to make the claim clear and self-contained.
+   - Do not change its factual meaning.
+
+3. Extract statements that can be independently verified.
+   Examples of suitable claims include statements about:
+   - who created, founded, hosted, developed, or discovered something
+   - dates, locations, quantities, measurements, or statistics
+   - historical events
+   - scientific or technical facts
+   - properties or behavior of systems, products, technologies, or organizations
+   - relationships between entities or events
+
+4. DO NOT extract:
+   - opinions or subjective judgments
+   - predictions or speculation
+   - recommendations
+   - personal preferences
+   - rhetorical statements
+   - questions
+   - commands or instructions
+   - advertisements or promotional statements
+   - calls to action
+   - greetings or conversational filler
+   - statements describing what the speaker is about to explain
+   - claims that exist only as questions
+   - unsupported interpretations or conclusions you derive yourself
+
+5. Be especially careful with subjective language.
+   Statements containing words such as "best", "worst", "amazing", "excellent", "easy", "difficult", "important", or "great" are usually opinions unless the transcript provides a clearly measurable factual basis.
+
+6. Do not treat the following as factual claims merely because they contain factual-looking words:
+   - video titles
+   - section headings
+   - speaker introductions
+   - descriptions of the video itself
+   - statements about what the video will cover
+   - promotional descriptions
+
+7. Do not combine multiple unrelated statements into one claim.
+   If the transcript contains several independently verifiable facts, extract them as separate claims.
+
+8. Do not duplicate claims.
+   If the same fact appears multiple times, extract it only once.
+
+9. Keep claims concise.
+   Remove unnecessary wording while preserving the exact factual meaning.
+
+10. Do not correct the speaker.
+    If the transcript contains a factual statement that may be false, questionable, outdated, or controversial, still extract it if it satisfies the rules above.
+    Verification happens later. Your job is extraction, not fact-checking.
+
+11. If a statement is ambiguous and cannot reasonably be understood as a specific factual assertion, do not extract it.
+
+12. If there are no qualifying factual claims, return an empty list.
+
+OUTPUT REQUIREMENT:
+
+Return ONLY the structured output defined by the provided schema.
+Do not include explanations, commentary, headings, Markdown, or additional text outside the schema.
+
+TRANSCRIPT:
 
 {state["video_transcript"]}
 
