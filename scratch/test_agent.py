@@ -5,10 +5,10 @@ root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-from youtube.ytID import extract_video_id
-from youtube.ytTranscript import yt_transcript
-from schema.user_input_schema import User
-from Agent.agents import yt_agent, create_retriever
+from backend.youtube.ytID import extract_video_id
+from backend.youtube.ytTranscript import yt_transcript
+from backend.schema.user_input_schema import User
+from backend.Agent.agents import yt_agent, create_retriever
 
 print("=== Testing URL Extraction ===")
 urls = [

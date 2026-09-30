@@ -17,7 +17,7 @@ from typing import TypedDict, Annotated, Any
 import operator
 from dotenv import load_dotenv
 from youtube.ytTranscript import yt_transcript
-from schema.agent_schema import Summary, Key_points, FactCheckResult, Topics, ReferenceResult, QueAns, Claims
+from backend.schema.agent_schema import Summary, Key_points, FactCheckResult, Topics, ReferenceResult, QueAns, Claims
 
 load_dotenv()
 
