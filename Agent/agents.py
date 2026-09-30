@@ -242,19 +242,23 @@ def claim_chunk_agent(state: State) -> dict:
     response = invoke_with_retry(
         chain,
         f"""
-Extract objectively verifiable factual claims from this transcript
-chunk.
+You are a Claim Extraction Agent.
 
-Rules:
-- Extract only claims explicitly stated in the text.
-- Do not add outside knowledge.
-- Do not extract opinions.
-- Do not extract questions.
-- Do not extract advertisements.
-- Do not extract calls to action.
-- Do not repeat the same claim.
-- Keep each claim short and factual.
-- If there are no factual claims, return an empty list.
+Analyze the provided video transcript and extract all distinct factual claims that can be independently verified.
+
+A claim must:
+- State a specific fact or assertion.
+- Be supported by the provided text.
+- Be independently verifiable.
+- Preserve the original meaning.
+
+Do not:
+- Add information or assumptions.
+- Rewrite claims to change their meaning.
+- Extract opinions, questions, instructions, or vague statements.
+- Merge unrelated claims.
+
+When a sentence contains multiple factual assertions, extract them as separate claims.
 
 Transcript chunk:
 
