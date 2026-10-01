@@ -874,7 +874,6 @@ comparison.add_node("claim_extractor_b",claim_extractor_b)
 comparison.add_node("topic_agent_a",topic_agent_a)
 comparison.add_node("topic_agent_b",topic_agent_b)
 comparison.add_node("comparison_agent",comparison_agent)
-comparison.add_node("comparison_report",comparison_report)
 
 comparison.add_edge(START,"claim_extractor_a")
 comparison.add_edge(START,"claim_extractor_b")
