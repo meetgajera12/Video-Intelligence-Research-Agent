@@ -1,7 +1,11 @@
 import streamlit as st
+import os
 import requests
 
-API_URL = "http://127.0.0.1:8000/agentRun"
+API_URL = os.getenv(
+    "API_URL",
+    "http://127.0.0.1:8000/agentRun"
+)
 
 st.set_page_config(
     page_icon="🤝",
