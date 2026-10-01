@@ -883,7 +883,6 @@ comparison.add_edge("claim_extractor_a","comparison_agent")
 comparison.add_edge("claim_extractor_b","comparison_agent")
 comparison.add_edge("topic_agent_a","comparison_agent")
 comparison.add_edge("topic_agent_b","comparison_agent")
-comparison.add_edge("comparison_agent","comparison_report")
-comparison.add_edge("comparison_report",END)
+comparison.add_edge("comparison_agent",END)
 
 comparison_agent_ = comparison.compile()
