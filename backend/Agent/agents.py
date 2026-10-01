@@ -1,3 +1,5 @@
+import time
+import re
 import sys
 from pathlib import Path
 root_dir = Path(__file__).resolve().parent.parent
@@ -12,12 +14,13 @@ from langchain_community.vectorstores import FAISS
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
 from sklearn.metrics.pairwise import cosine_similarity
-from typing import TypedDict, Annotated, Any
+from typing import TypedDict, Annotated, Any, List, Dict
 import operator
 from dotenv import load_dotenv
 from youtube.ytTranscript import yt_transcript
-from backend.schema.agent_schema import Summary, Key_points, FactCheckResult, Topics, ReferenceResult, QueAns, Claims
+from backend.schema.agent_schema import Summary, Key_points, FactCheckResult, Topics, ReferenceResult, QueAns, Claims, ComparisonResult, ComparisonReport
 
 load_dotenv()
 
@@ -50,8 +53,6 @@ def create_retriever(transcript: str):
     )
 
 
-import time
-import re
 
 # LLM model
 model = ChatGroq(
@@ -101,9 +102,34 @@ class State(TypedDict):
     answer  : str
     retriever: Any
 
+# state2
+class ComparisonState(TypedDict, total=False):
+    # Transcripts
+    transcript_a: str
+    transcript_b: str
+    # Claims
+    claims_a: List[Dict[str, Any]]
+    claims_b: List[Dict[str, Any]]
+    # Topics
+    topics_a: List[str]
+    topics_b: List[str]
+    # Comparison
+    similarities: List[Dict[str, Any]]
+    differences: List[Dict[str, Any]]
+    contradictions: List[Dict[str, Any]]
+    claim_comparison: List[Dict[str, Any]]
+    # Claims that actually need verification
+    claims_to_fact_check: List[Dict[str, Any]]
+    # Fact checking
+    fact_check_results: List[Dict[str, Any]]
+    # Final output
+    comparison_report: Dict[str, Any]
+
 
 #==================== Agents ====================#
 
+
+#-------main agent-------#
 
 # que-ans agent
 
@@ -568,7 +594,7 @@ Rules:
     }
 
 
-# --- building graph ---
+# --- graph ---
 
 g = StateGraph(State)
 
@@ -598,5 +624,279 @@ g.add_edge(START, 'topic_agent')
 g.add_edge('topic_agent','reference_agent')
 g.add_edge('reference_agent',END)
 
-
 yt_agent = g.compile()
+
+
+#-------comparison agent-------#
+
+# claim extractor agent
+
+def extract_claims_from_transcript(transcript: str) -> list[str]:
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=4000,
+        chunk_overlap=500
+    )
+
+    chunks = splitter.split_text(transcript)
+
+    all_claims = []
+
+    for chunk in chunks:
+
+        response = model.with_structured_output(
+            Claims,
+            method="json_schema",
+            strict=False
+        ).invoke(
+            f"""
+Extract objectively verifiable factual claims from this transcript
+chunk.
+
+Rules:
+- Extract only claims explicitly stated in the text.
+- Do not add outside knowledge.
+- Do not extract opinions.
+- Do not extract questions.
+- Do not extract advertisements.
+- Do not extract calls to action.
+- Keep each claim short and factual.
+- If there are no factual claims, return an empty list.
+
+Transcript chunk:
+
+{chunk}
+"""
+        )
+
+        all_claims.extend(response.claims)
+
+    return all_claims
+
+
+
+def claim_extractor_a(state: ComparisonState):
+
+    claims = extract_claims_from_transcript(
+        state["transcript_a"]
+    )
+
+    return {
+        "claims_a": claims
+    }
+
+def claim_extractor_b(state: ComparisonState):
+
+    claims = extract_claims_from_transcript(
+        state["transcript_b"]
+    )
+
+    return {
+        "claims_b": claims
+    }
+
+
+# topic extractor agent
+
+def topic_agent_a(state: ComparisonState):
+
+    temp_state = {
+        "video_transcript": state["transcript_a"]
+    }
+
+    result = topic_agent(temp_state)
+
+    return {
+        "topics_a": result["topics"]
+    }
+
+
+def topic_agent_b(state: ComparisonState):
+
+    temp_state = {
+        "video_transcript": state["transcript_b"]
+    }
+
+    result = topic_agent(temp_state)
+
+    return {
+        "topics_b": result["topics"]
+    }
+
+
+# cliam comparison agent
+
+comparison_prompt = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """
+You are a Video Comparison Agent.
+
+Compare Video A and Video B using ONLY the provided
+claims and topics.
+
+Your tasks:
+
+1. Identify important similarities.
+2. Identify important differences.
+3. Match related claims.
+4. Identify potential contradictions.
+5. Identify topics only covered by Video A.
+6. Identify topics only covered by Video B.
+7. Select claims that should be fact checked.
+
+Rules:
+
+- Do not perform external research.
+- Do not decide which video is correct.
+- Do not invent information.
+- A difference is NOT automatically a contradiction.
+- Only mark contradictory when the claims genuinely conflict.
+- Do not infer information that is not present.
+- If evidence is insufficient, say so.
+"""
+    ),
+    (
+        "human",
+        """
+VIDEO A
+
+Topics:
+{topics_a}
+
+Claims:
+{claims_a}
+
+
+VIDEO B
+
+Topics:
+{topics_b}
+
+Claims:
+{claims_b}
+"""
+    )
+])
+
+
+def comparison_agent(state: ComparisonState):
+
+    structured_llm = model.with_structured_output(
+        ComparisonResult,
+        method="json_schema",
+        strict=False
+    )
+
+    result = structured_llm.invoke(
+        comparison_prompt.format_messages(
+            topics_a=state.get("topics_a", []),
+            claims_a=state.get("claims_a", []),
+            topics_b=state.get("topics_b", []),
+            claims_b=state.get("claims_b", [])
+        )
+    )
+
+    return {
+        "similarities": result.similarities,
+
+        "differences": result.differences,
+
+        "claim_comparison": [
+            item.model_dump()
+            for item in result.claim_comparison
+        ],
+
+        "contradictions": [
+            item.model_dump()
+            for item in result.contradictions
+        ],
+
+        "claims_to_fact_check": result.claims_to_fact_check
+    }
+
+
+# comparison_fact_checker agent
+
+def comparison_fact_checker(state: ComparisonState):
+
+    temp_state = {
+        "claims": state.get("claims_to_fact_check", [])
+    }
+
+    result = fact_checker(temp_state)
+
+    return {
+        "fact_check": result["fact_check"]
+    }
+
+
+# comparison report agent
+
+def comparison_report(state: ComparisonState):
+
+    response = model.with_structured_output(
+        ComparisonReport,
+        method="json_schema",
+        strict=False
+    ).invoke(
+        f"""
+Create a clear comparison report for two YouTube videos.
+
+Video A topics:
+{state.get("topics_a", [])}
+
+Video B topics:
+{state.get("topics_b", [])}
+
+Similarities:
+{state.get("similarities", [])}
+
+Differences:
+{state.get("differences", [])}
+
+Claim comparison:
+{state.get("claim_comparison", [])}
+
+Contradictions:
+{state.get("contradictions", [])}
+
+Fact check results:
+{state.get("fact_check", [])}
+
+Do not invent information.
+Do not declare one video better.
+Present the differences and evidence neutrally.
+"""
+    )
+
+    return {
+        "comparison_report": response.model_dump()
+    }
+
+
+# --- graph ---
+
+comparison = StateGraph(ComparisonState)
+
+comparison.add_node("claim_extractor_a", claim_extractor_a)
+comparison.add_node("claim_extractor_b",claim_extractor_b)
+comparison.add_node("topic_agent_a",topic_agent_a)
+comparison.add_node("topic_agent_b",topic_agent_b)
+comparison.add_node("comparison_agent",comparison_agent)
+comparison.add_node("fact_checker",comparison_fact_checker)
+comparison.add_node("comparison_report",comparison_report)
+
+comparison.add_edge(START,"claim_extractor_a")
+comparison.add_edge(START,"claim_extractor_b")
+comparison.add_edge(START,"topic_agent_a")
+comparison.add_edge(START,"topic_agent_b")
+comparison.add_edge("claim_extractor_a","comparison_agent")
+comparison.add_edge("claim_extractor_b","comparison_agent")
+comparison.add_edge("topic_agent_a","comparison_agent")
+comparison.add_edge("topic_agent_b","comparison_agent")
+comparison.add_edge("comparison_agent","fact_checker")
+comparison.add_edge("fact_checker","comparison_report")
+comparison.add_edge("comparison_report",END)
+
+comparison_agent_ = comparison.compile()

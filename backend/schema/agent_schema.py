@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from typing import List, Literal, Dict, Any
 
 # summary agent
 class Summary(BaseModel):
@@ -82,4 +82,40 @@ class QueAns(BaseModel):
 # Claim agent
 class Claims(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    claims: list[str]
+    claims: list[str]
+
+#----------
+
+# claim extractor agent
+class ClaimComparison(BaseModel):
+    topic: str
+    video_a_claim: str
+    video_b_claim: str
+    relationship: Literal[
+        "supporting",
+        "similar",
+        "different",
+        "contradictory",
+        "unrelated"
+    ]
+    explanation: str
+
+class ComparisonResult(BaseModel):
+    similarities: List[str]
+    differences: List[str]
+    claim_comparison: List[ClaimComparison]
+    contradictions: List[ClaimComparison]
+    topics_only_video_a: List[str]
+    topics_only_video_b: List[str]
+    claims_to_fact_check: List[str]
+
+# comparison report agent
+
+class ComparisonReport(BaseModel):
+    overview: str
+    similarities: List[str]
+    differences: List[str]
+    claim_comparison: List[Dict[str, Any]]
+    contradictions: List[Dict[str, Any]]
+    topic_coverage: Dict[str, Any]
+    fact_check_summary: List[Dict[str, Any]]
