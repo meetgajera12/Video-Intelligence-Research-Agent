@@ -109,13 +109,3 @@ class ComparisonResult(BaseModel):
     topics_only_video_b: List[str]
     claims_to_fact_check: List[str]
 
-# comparison report agent
-
-class ComparisonReport(BaseModel):
-    overview: str
-    similarities: List[str]
-    differences: List[str]
-    claim_comparison: List[Dict[str, Any]]
-    contradictions: List[Dict[str, Any]]
-    topic_coverage: Dict[str, Any]
-    fact_check_summary: List[Dict[str, Any]]

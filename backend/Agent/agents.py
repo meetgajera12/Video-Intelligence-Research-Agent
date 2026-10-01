@@ -20,8 +20,7 @@ from typing import TypedDict, Annotated, Any, List, Dict
 import operator
 from dotenv import load_dotenv
 from youtube.ytTranscript import yt_transcript
-from backend.schema.agent_schema import Summary, Key_points, FactCheckResult, Topics, ReferenceResult, QueAns, Claims, ComparisonResult, ComparisonReport
-
+from backend.schema.agent_schema import Summary, Key_points, FactCheckResult, Topics, ReferenceResult, QueAns, Claims, ComparisonResult
 load_dotenv()
 
 
@@ -122,8 +121,7 @@ class ComparisonState(TypedDict, total=False):
     claims_to_fact_check: List[Dict[str, Any]]
     # Fact checking
     fact_check_results: List[Dict[str, Any]]
-    # Final output
-    comparison_report: Dict[str, Any]
+    
 
 
 #==================== Agents ====================#
@@ -724,7 +722,7 @@ def topic_agent_b(state: ComparisonState):
     }
 
 
-# cliam comparison agent
+# comparison agent
 
 comparison_prompt = ChatPromptTemplate.from_messages([
     (
@@ -732,47 +730,72 @@ comparison_prompt = ChatPromptTemplate.from_messages([
         """
 You are a video comparison analysis agent.
 
-Analyze Video A and Video B and return ONLY the structured fields defined by the ComparisonResult schema.
+You are given already-extracted claims and topics from two videos.
 
-You MUST provide every field.
+Your job is ONLY to compare them.
 
-For each video:
+Do not extract new claims.
+Do not extract new topics.
+Do not use outside knowledge.
+Do not invent information.
 
-1. Extract the important factual claims from Video A.
-2. Extract the important factual claims from Video B.
-3. Extract the major topics from Video A.
-4. Extract the major topics from Video B.
+Analyze the provided information and produce:
 
-"Only include claim comparisons when the claims are materially related.
+1. similarities
+2. differences
+3. claim_comparison
+4. contradictions
+5. claims_to_fact_check
 
-Do not create a claim_comparison entry merely because both videos mention the same general subject.
+CLAIM COMPARISON:
 
-Prioritize:
-- directly related claims
-- materially different claims
-- potentially contradictory claims
+Only compare claims that are materially related.
 
--- (do same for Topics also)
+Use these relationship types where applicable:
 
-Ignore trivial or unrelated mentions. "
+- supporting
+- similar
+- different
+- contradictory
+- unrelated
 
-Then compare the two videos:
+Do not create a comparison merely because both videos discuss the same broad subject.
 
-5. Identify similarities.
-6. Identify differences.
-7. Compare related claims.
-8. Identify genuine contradictions.
-9. Identify claims that require independent fact checking.
-10. Produce a concise comparison report.
+CONTRADICTIONS:
 
-Important:
-- Do not invent information.
-- Do not treat a difference as a contradiction.
-- A contradiction requires two claims that cannot both reasonably be true under the same context.
-- If one video does not discuss a topic or claim, say so explicitly.
-- Preserve the meaning of the claims.
-- Return empty lists when no items exist.
-- Return valid structured data matching the ComparisonResult schema.
+A contradiction exists only when the factual assertions of Video A
+and Video B genuinely conflict under the same context.
+
+A difference in:
+- wording
+- examples
+- emphasis
+- scope
+- level of detail
+
+is NOT automatically a contradiction.
+
+CLAIMS TO FACT CHECK:
+
+Include only claims where independent external verification
+would be useful.
+
+If no claims require fact checking, return an empty list.
+
+SIMILARITIES:
+
+Identify meaningful similarities between the videos.
+
+DIFFERENCES:
+
+Identify meaningful differences between the videos.
+
+IMPORTANT:
+
+Return empty lists when no items exist.
+
+Do not omit fields.
+Return only the structured output.
 """
     ),
     (
@@ -803,7 +826,7 @@ def comparison_agent(state: ComparisonState):
 
     structured_llm = model.with_structured_output(
         ComparisonResult,
-        method="json_schema",
+        method="function_calling",
         strict=False
     )
 
@@ -817,8 +840,14 @@ def comparison_agent(state: ComparisonState):
     )
 
     return {
-        "similarities": result.similarities,
+        # Original extracted data
+        "claims_a": state.get("claims_a", []),
+        "claims_b": state.get("claims_b", []),
+        "topics_a": state.get("topics_a", []),
+        "topics_b": state.get("topics_b", []),
 
+        # Comparison output
+        "similarities": result.similarities,
         "differences": result.differences,
 
         "claim_comparison": [
@@ -835,64 +864,6 @@ def comparison_agent(state: ComparisonState):
     }
 
 
-# comparison_fact_checker agent
-
-def comparison_fact_checker(state: ComparisonState):
-
-    temp_state = {
-        "claims": state.get("claims_to_fact_check", [])
-    }
-
-    result = fact_checker(temp_state)
-
-    return {
-        "fact_check": result["fact_check"]
-    }
-
-
-# comparison report agent
-
-def comparison_report(state: ComparisonState):
-
-    response = model.with_structured_output(
-        ComparisonReport,
-        method="json_schema",
-        strict=False
-    ).invoke(
-        f"""
-Create a clear comparison report for two YouTube videos.
-
-Video A topics:
-{state.get("topics_a", [])}
-
-Video B topics:
-{state.get("topics_b", [])}
-
-Similarities:
-{state.get("similarities", [])}
-
-Differences:
-{state.get("differences", [])}
-
-Claim comparison:
-{state.get("claim_comparison", [])}
-
-Contradictions:
-{state.get("contradictions", [])}
-
-Fact check results:
-{state.get("fact_check", [])}
-
-Do not invent information.
-Do not declare one video better.
-Present the differences and evidence neutrally.
-"""
-    )
-
-    return {
-        "comparison_report": response.model_dump()
-    }
-
 
 # --- graph ---
 
@@ -903,7 +874,6 @@ comparison.add_node("claim_extractor_b",claim_extractor_b)
 comparison.add_node("topic_agent_a",topic_agent_a)
 comparison.add_node("topic_agent_b",topic_agent_b)
 comparison.add_node("comparison_agent",comparison_agent)
-comparison.add_node("fact_checker",comparison_fact_checker)
 comparison.add_node("comparison_report",comparison_report)
 
 comparison.add_edge(START,"claim_extractor_a")
@@ -914,8 +884,7 @@ comparison.add_edge("claim_extractor_a","comparison_agent")
 comparison.add_edge("claim_extractor_b","comparison_agent")
 comparison.add_edge("topic_agent_a","comparison_agent")
 comparison.add_edge("topic_agent_b","comparison_agent")
-comparison.add_edge("comparison_agent","fact_checker")
-comparison.add_edge("fact_checker","comparison_report")
+comparison.add_edge("comparison_agent","comparison_report")
 comparison.add_edge("comparison_report",END)
 
 comparison_agent_ = comparison.compile()

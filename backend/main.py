@@ -90,8 +90,7 @@ def run(user: User):
                     "contradictions": [],
                     "claim_comparison": [],
                     "claims_to_fact_check": [],
-                    "fact_check_results": [],
-                    "comparison_report": {}
+                    "fact_check_results": []
                 }
             )
 
@@ -113,8 +112,7 @@ def run(user: User):
                 "contradictions": result2.get("contradictions", []),
                 "claim_comparison": result2.get("claim_comparison", []),
                 "claims_to_fact_check": result2.get("claims_to_fact_check",[]),
-                "fact_check_results": result2.get("fact_check_results", []),
-                "comparison_report": result2.get("comparison_report", [])
+                "fact_check_results": result2.get("fact_check_results", [])
             }
         except Exception as e:
             err_msg = str(e)
