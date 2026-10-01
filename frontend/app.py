@@ -596,6 +596,12 @@ if "chat_history" not in st.session_state:
 if "result" not in st.session_state:
     st.session_state.result = {}
 
+if "comparison_result" not in st.session_state:
+    st.session_state.comparison_result = {}
+
+if "comparison_video_url" not in st.session_state:
+    st.session_state.comparison_video_url = ""
+
 
 def analyze_video(video_url):
     """Run the full video analysis and store the result in session state."""
@@ -607,7 +613,7 @@ def analyze_video(video_url):
                     "yt_url": video_url,
                     "question": None,
                 },
-                timeout=300,
+                timeout=600,
             )
 
             if response.status_code == 200:
@@ -636,6 +642,128 @@ def analyze_video(video_url):
         except requests.exceptions.RequestException as e:
             st.error(f"Request failed: {e}")
 
+def compare_videos(video_b_url):
+    """Run the comparison workflow using the existing /agentRun endpoint."""
+    video_a_url = st.session_state.video_url.strip()
+    video_b_url = video_b_url.strip()
+
+    if not video_a_url:
+        st.error("Please analyze Video A first.")
+        return
+
+    if not video_b_url:
+        st.warning("Please enter a second YouTube video URL.")
+        return
+
+    if video_a_url == video_b_url:
+        st.warning("Video A and Video B are the same video. Please choose a different video.")
+        return
+
+    with st.spinner("Comparing both videos & running comparison agents..."):
+        try:
+            response = requests.post(
+                API_URL,
+                json={
+                    "yt_url": video_a_url,
+                    "yt2_url": video_b_url,
+                    "question": None,
+                },
+                timeout=1200,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+
+                st.session_state.comparison_result = {
+                    "claims_a": data.get("claims_a", []),
+                    "claims_b": data.get("claims_b", []),
+                    "topics_a": data.get("topics_a", []),
+                    "topics_b": data.get("topics_b", []),
+                    "similarities": data.get("similarities", []),
+                    "differences": data.get("differences", []),
+                    "contradictions": data.get("contradictions", []),
+                    "claim_comparison": data.get("claim_comparison", []),
+                    "claims_to_fact_check": data.get("claims_to_fact_check", []),
+                    "fact_check_results": data.get("fact_check_results", [])
+                }
+                st.session_state.comparison_video_url = video_b_url
+                st.rerun()
+
+            else:
+                st.error(
+                    f"API Error {response.status_code}: "
+                    f"{response.text}"
+                )
+
+        except requests.exceptions.ConnectionError:
+            st.error(
+                "FastAPI server is not running. "
+                "Please start backend/main.py first."
+            )
+        except requests.exceptions.Timeout:
+            st.error("The comparison request timed out. Please try again.")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Request failed: {e}")
+
+
+def _render_comparison_items(items, empty_message="No data available."):
+    """Render comparison data without assuming one fixed response shape."""
+    if not items:
+        st.info(empty_message)
+        return
+
+    if isinstance(items, (str, int, float)):
+        st.write(items)
+        return
+
+    if isinstance(items, dict):
+        for key, value in items.items():
+            label = str(key).replace("_", " ").title()
+            st.markdown(f"**{label}:**")
+            if isinstance(value, (dict, list)):
+                st.json(value)
+            else:
+                st.write(value)
+        return
+
+    for item in items:
+        if isinstance(item, dict):
+            # Claim-comparison / contradiction records are easier to scan as cards.
+            if any(k in item for k in ("video_a_claim", "video_b_claim", "relationship")):
+                relationship = item.get("relationship", "").replace("_", " ").title()
+                if relationship:
+                    st.markdown(f"### {relationship}")
+                if item.get("video_a_claim"):
+                    st.markdown(f"**Video A:** {item.get('video_a_claim')}")
+                if item.get("video_b_claim"):
+                    st.markdown(f"**Video B:** {item.get('video_b_claim')}")
+                if item.get("explanation"):
+                    st.markdown(f"**Explanation:** {item.get('explanation')}")
+                st.divider()
+            elif any(k in item for k in ("claim", "verdict", "evidence", "sources")):
+                if item.get("claim"):
+                    st.markdown(f"**Claim:** {item.get('claim')}")
+                if item.get("verdict"):
+                    verdict = str(item.get("verdict", "UNKNOWN"))
+                    st.markdown(f"**Verdict:** `{verdict}`")
+                if item.get("explanation"):
+                    st.markdown(f"**Explanation:** {item.get('explanation')}")
+                if item.get("evidence"):
+                    st.markdown(f"**Evidence:** {item.get('evidence')}")
+                if item.get("sources"):
+                    sources = item.get("sources")
+                    if isinstance(sources, list):
+                        st.markdown("**Sources:** " + ", ".join(map(str, sources)))
+                    else:
+                        st.markdown(f"**Sources:** {sources}")
+                st.divider()
+            else:
+                st.json(item)
+        elif isinstance(item, (list, tuple)):
+            st.json(item)
+        else:
+            st.markdown(f"- {item}")
+
 
 def ask_question(question):
     """Send a Q&A question to the backend."""
@@ -646,7 +774,7 @@ def ask_question(question):
                 "yt_url": st.session_state.video_url,
                 "question": question,
             },
-            timeout=300,
+            timeout=600,
         )
 
         if response.status_code == 200:
@@ -705,6 +833,8 @@ if st.session_state.video_analyzed:
         st.session_state.video_url = ""
         st.session_state.video_url_input = ""
         st.session_state.result = {}
+        st.session_state.comparison_result = {}
+        st.session_state.comparison_video_url = ""
         st.session_state.chat_history = []
         st.rerun()
 
@@ -743,337 +873,508 @@ if not st.session_state.video_analyzed:
     st.stop()
 
 
-result = st.session_state.result
+analysis_tab, comparison_tab = st.tabs(["🎥 Video Analysis", "⚖️ Comparison"])
 
-video_transcript = result.get("video_transcript", "")
-summary = result.get("summary", "")
-key_points = result.get("key_points", [])
-claims = result.get("claims", [])
-fact_check = result.get("fact_check", [])
-topics = result.get("topics", [])
-references = result.get("references", [])
+with analysis_tab:
+    result = st.session_state.result
 
-with st.container(border=True):
-    st.markdown(
-        '<div class="section-kicker">VIDEO CONTEXT</div>',
-        unsafe_allow_html=True,
-    )
+    video_transcript = result.get("video_transcript", "")
+    summary = result.get("summary", "")
+    key_points = result.get("key_points", [])
+    claims = result.get("claims", [])
+    fact_check = result.get("fact_check", [])
+    topics = result.get("topics", [])
+    references = result.get("references", [])
 
-    st.markdown(
-        f"""<div class="source-card">
-        <div class="source-label">Analyzed source</div>
-        <div class="source-url">{st.session_state.video_url}</div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="overview-label">At a glance</div>',
-        unsafe_allow_html=True,
-    )
-
-    overview = st.columns(4)
-
-    overview_data = [
-        ("Transcript", "Available" if video_transcript else "Missing"),
-        ("Key points", str(len(key_points))),
-        ("Claims", str(len(claims))),
-        ("References", str(len(references))),
-    ]
-
-    for col, (label, value) in zip(overview, overview_data):
-        with col:
-            st.markdown(
-                f"""<div class="overview-card">
-                <div class="overview-value">{value}</div>
-                <div class="overview-name">{label}</div>
-                </div>""",
-                unsafe_allow_html=True,
-            )
-
-
-# -------------------- Tabs --------------------
-
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
-    [
-        "📜 Transcript",
-        "📝 Summary",
-        "🔑 Key Points",
-        "✅ Claims & Fact Check",
-        "🏷️ Topics",
-        "📚 References",
-        "💬 Q&A",
-    ]
-)
-
-
-# -------------------- Transcript --------------------
-
-with tab1:
-    st.markdown('<div class="section-kicker">SOURCE MATERIAL</div>', unsafe_allow_html=True)
-    st.header("YouTube Video Transcript")
-    st.markdown(
-        '<div class="section-description">The source text used by the research workflow.</div>',
-        unsafe_allow_html=True,
-    )
-    st.write(
-        video_transcript
-        if video_transcript
-        else "No transcript available."
-    )
-
-
-# -------------------- Summary --------------------
-
-with tab2:
-    st.markdown('<div class="section-kicker">AT A GLANCE</div>', unsafe_allow_html=True)
-    st.header("Summary")
-    st.markdown(
-        '<div class="section-description">A concise synthesis of the video’s main argument and ideas.</div>',
-        unsafe_allow_html=True,
-    )
-    st.write(
-        summary
-        if summary
-        else "No summary available."
-    )
-
-
-# -------------------- Key Points --------------------
-
-with tab3:
-    st.markdown('<div class="section-kicker">TAKEAWAYS</div>', unsafe_allow_html=True)
-    st.header("Key Points")
-    st.markdown(
-        '<div class="section-description">The main ideas worth remembering or revisiting.</div>',
-        unsafe_allow_html=True,
-    )
-
-    if key_points:
-        for point in key_points:
-            st.markdown(f"- {point}")
-    else:
-        st.info("No key points found.")
-
-
-# -------------------- Claims & Fact Check --------------------
-
-with tab4:
-    st.markdown('<div class="section-kicker">EVIDENCE REVIEW</div>', unsafe_allow_html=True)
-    st.header("Claims & Fact Check")
-    st.markdown(
-        '<div class="section-description">Separate what the video claims from what the verification workflow found.</div>',
-        unsafe_allow_html=True,
-    )
-
-    if claims:
-        st.subheader("Extracted Factual Claims")
-
-        for claim in claims:
-            st.markdown(f"- {claim}")
-    else:
-        st.info(
-            "No explicit factual claims extracted from the video."
+    with st.container(border=True):
+        st.markdown(
+            '<div class="section-kicker">VIDEO CONTEXT</div>',
+            unsafe_allow_html=True,
         )
 
-    if fact_check:
-        st.subheader("Fact Check Verification Results")
+        st.markdown(
+            f"""<div class="source-card">
+            <div class="source-label">Analyzed source</div>
+            <div class="source-url">{st.session_state.video_url}</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
 
-        for fact in fact_check:
-            if isinstance(fact, dict):
-                verdict = fact.get("verdict", "UNKNOWN")
+        st.markdown(
+            '<div class="overview-label">At a glance</div>',
+            unsafe_allow_html=True,
+        )
 
-                if verdict == "TRUE":
-                    color = "green"
-                elif verdict == "FALSE":
-                    color = "red"
-                else:
-                    color = "orange"
+        overview = st.columns(4)
 
+        overview_data = [
+            ("Transcript", "Available" if video_transcript else "Missing"),
+            ("Key points", str(len(key_points))),
+            ("Claims", str(len(claims))),
+            ("References", str(len(references))),
+        ]
+
+        for col, (label, value) in zip(overview, overview_data):
+            with col:
                 st.markdown(
-                    f"**Claim:** {fact.get('claim', '')}"
-                )
-                st.markdown(
-                    f"**Verdict:** :{color}[{verdict}]"
-                )
-
-                if fact.get("explanation"):
-                    st.markdown(
-                        f"**Explanation:** "
-                        f"{fact.get('explanation')}"
-                    )
-
-                if fact.get("evidence"):
-                    st.markdown(
-                        f"**Evidence:** "
-                        f"{fact.get('evidence')}"
-                    )
-
-                if fact.get("sources"):
-                    st.markdown(
-                        f"**Sources:** "
-                        f"{', '.join(fact.get('sources', []))}"
-                    )
-
-                st.divider()
-
-            else:
-                st.write(fact)
-    else:
-        st.info("No fact-check results available.")
-
-
-# -------------------- Topics --------------------
-
-with tab5:
-    st.markdown('<div class="section-kicker">MAP THE CONTENT</div>', unsafe_allow_html=True)
-    st.header("Topics Included in Video")
-    st.markdown(
-        '<div class="section-description">The major subjects detected across the video.</div>',
-        unsafe_allow_html=True,
-    )
-
-    if topics:
-        for topic in topics:
-            st.markdown(f"- {topic}")
-    else:
-        st.info("No main topics identified.")
-
-
-# -------------------- References --------------------
-
-with tab6:
-    st.markdown('<div class="section-kicker">RESEARCH TRAIL</div>', unsafe_allow_html=True)
-    st.header("External References")
-    st.markdown(
-        '<div class="section-description">Sources gathered to extend or support the video’s discussion.</div>',
-        unsafe_allow_html=True,
-    )
-
-    if references:
-        for ref in references:
-            if isinstance(ref, dict):
-                st.markdown(
-                    f"""<div class="content-card">
-                    <div class="content-card-title">{ref.get('title', 'Reference')}</div>
-                    <div class="content-card-text">{ref.get('relevance', '')}</div>
+                    f"""<div class="overview-card">
+                    <div class="overview-value">{value}</div>
+                    <div class="overview-name">{label}</div>
                     </div>""",
                     unsafe_allow_html=True,
                 )
 
-                if ref.get("url"):
+
+    # -------------------- Tabs --------------------
+
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+        [
+            "📜 Transcript",
+            "📝 Summary",
+            "🔑 Key Points",
+            "✅ Claims & Fact Check",
+            "🏷️ Topics",
+            "📚 References",
+            "💬 Q&A",
+        ]
+    )
+
+
+    # -------------------- Transcript --------------------
+
+    with tab1:
+        st.markdown('<div class="section-kicker">SOURCE MATERIAL</div>', unsafe_allow_html=True)
+        st.header("YouTube Video Transcript")
+        st.markdown(
+            '<div class="section-description">The source text used by the research workflow.</div>',
+            unsafe_allow_html=True,
+        )
+        st.write(
+            video_transcript
+            if video_transcript
+            else "No transcript available."
+        )
+
+
+    # -------------------- Summary --------------------
+
+    with tab2:
+        st.markdown('<div class="section-kicker">AT A GLANCE</div>', unsafe_allow_html=True)
+        st.header("Summary")
+        st.markdown(
+            '<div class="section-description">A concise synthesis of the video’s main argument and ideas.</div>',
+            unsafe_allow_html=True,
+        )
+        st.write(
+            summary
+            if summary
+            else "No summary available."
+        )
+
+
+    # -------------------- Key Points --------------------
+
+    with tab3:
+        st.markdown('<div class="section-kicker">TAKEAWAYS</div>', unsafe_allow_html=True)
+        st.header("Key Points")
+        st.markdown(
+            '<div class="section-description">The main ideas worth remembering or revisiting.</div>',
+            unsafe_allow_html=True,
+        )
+
+        if key_points:
+            for point in key_points:
+                st.markdown(f"- {point}")
+        else:
+            st.info("No key points found.")
+
+
+    # -------------------- Claims & Fact Check --------------------
+
+    with tab4:
+        st.markdown('<div class="section-kicker">EVIDENCE REVIEW</div>', unsafe_allow_html=True)
+        st.header("Claims & Fact Check")
+        st.markdown(
+            '<div class="section-description">Separate what the video claims from what the verification workflow found.</div>',
+            unsafe_allow_html=True,
+        )
+
+        if claims:
+            st.subheader("Extracted Factual Claims")
+
+            for claim in claims:
+                st.markdown(f"- {claim}")
+        else:
+            st.info(
+                "No explicit factual claims extracted from the video."
+            )
+
+        if fact_check:
+            st.subheader("Fact Check Verification Results")
+
+            for fact in fact_check:
+                if isinstance(fact, dict):
+                    verdict = fact.get("verdict", "UNKNOWN")
+
+                    if verdict == "TRUE":
+                        color = "green"
+                    elif verdict == "FALSE":
+                        color = "red"
+                    else:
+                        color = "orange"
+
                     st.markdown(
-                        f"[Open source ↗]({ref['url']})"
+                        f"**Claim:** {fact.get('claim', '')}"
+                    )
+                    st.markdown(
+                        f"**Verdict:** :{color}[{verdict}]"
                     )
 
-            else:
-                st.write(ref)
-    else:
-        st.info("No external references found.")
+                    if fact.get("explanation"):
+                        st.markdown(
+                            f"**Explanation:** "
+                            f"{fact.get('explanation')}"
+                        )
+
+                    if fact.get("evidence"):
+                        st.markdown(
+                            f"**Evidence:** "
+                            f"{fact.get('evidence')}"
+                        )
+
+                    if fact.get("sources"):
+                        st.markdown(
+                            f"**Sources:** "
+                            f"{', '.join(fact.get('sources', []))}"
+                        )
+
+                    st.divider()
+
+                else:
+                    st.write(fact)
+        else:
+            st.info("No fact-check results available.")
 
 
-# -------------------- Q&A Chat --------------------
+    # -------------------- Topics --------------------
 
-with tab7:
-    st.markdown(
-        '<div class="qa-kicker">VIDEO RESEARCH / CONVERSATION</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="qa-title">Ask the video.</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div class="qa-description">'
-        'Explore the ideas in this video through a grounded conversation. '
-        'Ask for explanations, examples, comparisons, or clarification.'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="context-pill">'
-        '<span class="context-dot"></span>'
-        'Context locked to analyzed video'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-    # First screen: keep it simple and useful.
-    if not st.session_state.chat_history:
+    with tab5:
+        st.markdown('<div class="section-kicker">MAP THE CONTENT</div>', unsafe_allow_html=True)
+        st.header("Topics Included in Video")
         st.markdown(
-            '<div class="welcome-card">'
-            '<div class="welcome-title">What do you want to understand?</div>'
-            '<div class="welcome-text">'
-            'Choose a starting point or ask your own question below.'
-            '</div>'
+            '<div class="section-description">The major subjects detected across the video.</div>',
+            unsafe_allow_html=True,
+        )
+
+        if topics:
+            for topic in topics:
+                st.markdown(f"- {topic}")
+        else:
+            st.info("No main topics identified.")
+
+
+    # -------------------- References --------------------
+
+    with tab6:
+        st.markdown('<div class="section-kicker">RESEARCH TRAIL</div>', unsafe_allow_html=True)
+        st.header("External References")
+        st.markdown(
+            '<div class="section-description">Sources gathered to extend or support the video’s discussion.</div>',
+            unsafe_allow_html=True,
+        )
+
+        if references:
+            for ref in references:
+                if isinstance(ref, dict):
+                    st.markdown(
+                        f"""<div class="content-card">
+                        <div class="content-card-title">{ref.get('title', 'Reference')}</div>
+                        <div class="content-card-text">{ref.get('relevance', '')}</div>
+                        </div>""",
+                        unsafe_allow_html=True,
+                    )
+
+                    if ref.get("url"):
+                        st.markdown(
+                            f"[Open source ↗]({ref['url']})"
+                        )
+
+                else:
+                    st.write(ref)
+        else:
+            st.info("No external references found.")
+
+
+    # -------------------- Q&A Chat --------------------
+
+    with tab7:
+        st.markdown(
+            '<div class="qa-kicker">VIDEO RESEARCH / CONVERSATION</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="qa-title">Ask the video.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="qa-description">'
+            'Explore the ideas in this video through a grounded conversation. '
+            'Ask for explanations, examples, comparisons, or clarification.'
             '</div>',
             unsafe_allow_html=True,
         )
 
         st.markdown(
-            '<div class="prompt-label">Suggested questions</div>',
+            '<div class="context-pill">'
+            '<span class="context-dot"></span>'
+            'Context locked to analyzed video'
+            '</div>',
             unsafe_allow_html=True,
         )
 
-        prompt_cols = st.columns(3)
+        # First screen: keep it simple and useful.
+        if not st.session_state.chat_history:
+            st.markdown(
+                '<div class="welcome-card">'
+                '<div class="welcome-title">What do you want to understand?</div>'
+                '<div class="welcome-text">'
+                'Choose a starting point or ask your own question below.'
+                '</div>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
 
-        prompts = [
-            "What is the main idea of this video?",
-            "Explain the most important concept with an example.",
-            "What are the key claims I should verify?",
-        ]
+            st.markdown(
+                '<div class="prompt-label">Suggested questions</div>',
+                unsafe_allow_html=True,
+            )
 
-        for index, (col, prompt) in enumerate(zip(prompt_cols, prompts)):
-            with col:
-                if st.button(
-                    prompt,
-                    key=f"prompt_{index}",
-                    use_container_width=True,
-                ):
-                    st.session_state.pending_question = prompt
-                    st.rerun()
+            prompt_cols = st.columns(3)
 
-    # Display conversation
-    for message in st.session_state.chat_history:
-        # Do NOT pass a custom avatar string here.
-        # Streamlit's built-in user/assistant avatars are used.
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            prompts = [
+                "What is the main idea of this video?",
+                "Explain the most important concept with an example.",
+                "What are the key claims I should verify?",
+            ]
 
-    # Suggested question or typed question
-    question = st.session_state.pop("pending_question", None)
+            for index, (col, prompt) in enumerate(zip(prompt_cols, prompts)):
+                with col:
+                    if st.button(
+                        prompt,
+                        key=f"prompt_{index}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.pending_question = prompt
+                        st.rerun()
 
-    typed_question = st.chat_input(
-        "Ask a follow-up about this video..."
-    )
+        # Display conversation
+        for message in st.session_state.chat_history:
+            # Do NOT pass a custom avatar string here.
+            # Streamlit's built-in user/assistant avatars are used.
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-    if typed_question:
-        question = typed_question.strip()
+        # Suggested question or typed question
+        question = st.session_state.pop("pending_question", None)
 
-    if question:
-        st.session_state.chat_history.append(
-            {
-                "role": "user",
-                "content": question,
-            }
+        typed_question = st.chat_input(
+            "Ask a follow-up about this video..."
         )
 
-        with st.chat_message("user"):
-            st.markdown(question)
+        if typed_question:
+            question = typed_question.strip()
 
-        with st.chat_message("assistant"):
-            with st.spinner("Researching the video context..."):
-                answer = ask_question(question)
+        if question:
+            st.session_state.chat_history.append(
+                {
+                    "role": "user",
+                    "content": question,
+                }
+            )
 
-            if answer:
-                st.markdown(answer)
+            with st.chat_message("user"):
+                st.markdown(question)
 
-                st.session_state.chat_history.append(
-                    {
-                        "role": "assistant",
-                        "content": answer,
-                    }
+            with st.chat_message("assistant"):
+                with st.spinner("Researching the video context..."):
+                    answer = ask_question(question)
+
+                if answer:
+                    st.markdown(answer)
+
+                    st.session_state.chat_history.append(
+                        {
+                            "role": "assistant",
+                            "content": answer,
+                        }
+                    )
+
+                    st.rerun()
+''
+
+with comparison_tab:
+    st.markdown('<div class="section-kicker">VIDEO COMPARISON</div>', unsafe_allow_html=True)
+    st.header("Compare two videos")
+    st.markdown(
+        '<div class="section-description">'
+        'Compare claims, topics, similarities, differences, contradictions, and independently verified claims across two videos.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    video_a = st.session_state.video_url
+
+    col_a, col_b = st.columns(2, gap="large")
+
+    with col_a:
+        st.markdown('<div class="overview-label">VIDEO A · CURRENT VIDEO</div>', unsafe_allow_html=True)
+        st.text_input(
+            "Video A URL",
+            value=video_a,
+            disabled=True,
+            key="comparison_video_a_display",
+        )
+
+    with col_b:
+        st.markdown('<div class="overview-label">VIDEO B · SECOND VIDEO</div>', unsafe_allow_html=True)
+        video_b = st.text_input(
+            "Video B URL",
+            value=st.session_state.comparison_video_url,
+            key="comparison_video_b_input",
+            placeholder="https://www.youtube.com/watch?v=...",
+        )
+
+    if st.button("⚖️ Compare Videos", type="primary", use_container_width=True, key="compare_videos_button"):
+        compare_videos(video_b)
+
+    comparison = st.session_state.comparison_result
+
+    if not comparison:
+        st.markdown(
+            '<div class="content-card">'
+            '<div class="section-kicker">READY TO COMPARE</div>'
+            '<div class="content-card-title">Add a second video to begin</div>'
+            '<div class="content-card-text">'
+            'Video A is automatically taken from your current analysis. Paste another public YouTube URL as Video B, then run the comparison.'
+            '</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f'''<div class="source-card">
+            <div class="source-label">Comparison sources</div>
+            <div class="source-url"><strong>Video A:</strong> {video_a}</div>
+            <div class="source-url"><strong>Video B:</strong> {st.session_state.comparison_video_url}</div>
+            </div>''',
+            unsafe_allow_html=True,
+        )
+
+        claims_a = comparison.get("claims_a", [])
+        claims_b = comparison.get("claims_b", [])
+        topics_a = comparison.get("topics_a", [])
+        topics_b = comparison.get("topics_b", [])
+        similarities = comparison.get("similarities", [])
+        differences = comparison.get("differences", [])
+        contradictions = comparison.get("contradictions", [])
+        claim_comparison = comparison.get("claim_comparison", [])
+        claims_to_fact_check = comparison.get("claims_to_fact_check", [])
+        fact_check_results = comparison.get("fact_check_results", [])
+
+        overview = st.columns(4)
+        overview_data = [
+            ("Similarities", str(len(similarities)) if isinstance(similarities, list) else "—"),
+            ("Differences", str(len(differences)) if isinstance(differences, list) else "—"),
+            ("Contradictions", str(len(contradictions)) if isinstance(contradictions, list) else "—"),
+            ("Claims to verify", str(len(claims_to_fact_check)) if isinstance(claims_to_fact_check, list) else "—"),
+        ]
+        for col, (label, value) in zip(overview, overview_data):
+            with col:
+                st.markdown(
+                    f'''<div class="overview-card">
+                    <div class="overview-value">{value}</div>
+                    <div class="overview-name">{label}</div>
+                    </div>''',
+                    unsafe_allow_html=True,
                 )
 
-                st.rerun()
+        comparison_tabs = st.tabs([
+            "Overview",
+            "Claims",
+            "Topics",
+            "Differences",
+            "Contradictions",
+            "Fact Check"
+        ])
+
+        # -------------------- Comparison Overview --------------------
+        with comparison_tabs[0]:
+            st.markdown('<div class="section-kicker">HIGH-LEVEL COMPARISON</div>', unsafe_allow_html=True)
+            st.header("Similarities & Differences")
+
+            st.subheader("Similarities")
+            _render_comparison_items(similarities, "No similarities identified.")
+
+            st.subheader("Differences")
+            _render_comparison_items(differences, "No differences identified.")
+
+        # -------------------- Comparison Claims --------------------
+        with comparison_tabs[1]:
+            st.markdown('<div class="section-kicker">CLAIM ANALYSIS</div>', unsafe_allow_html=True)
+            st.header("Claims across both videos")
+
+            claim_col_a, claim_col_b = st.columns(2, gap="large")
+            with claim_col_a:
+                st.subheader("Video A Claims")
+                _render_comparison_items(claims_a, "No claims extracted from Video A.")
+            with claim_col_b:
+                st.subheader("Video B Claims")
+                _render_comparison_items(claims_b, "No claims extracted from Video B.")
+
+            st.divider()
+            st.subheader("Claim Relationships")
+            _render_comparison_items(claim_comparison, "No claim relationships returned.")
+
+        # -------------------- Comparison Topics --------------------
+        with comparison_tabs[2]:
+            st.markdown('<div class="section-kicker">TOPIC ANALYSIS</div>', unsafe_allow_html=True)
+            st.header("Topics across both videos")
+
+            topic_col_a, topic_col_b = st.columns(2, gap="large")
+            with topic_col_a:
+                st.subheader("Video A Topics")
+                _render_comparison_items(topics_a, "No topics extracted from Video A.")
+            with topic_col_b:
+                st.subheader("Video B Topics")
+                _render_comparison_items(topics_b, "No topics extracted from Video B.")
+
+        # -------------------- Differences --------------------
+        with comparison_tabs[3]:
+            st.markdown('<div class="section-kicker">CONTENT DIFFERENCES</div>', unsafe_allow_html=True)
+            st.header("How the videos differ")
+            _render_comparison_items(differences, "No differences identified.")
+
+        # -------------------- Contradictions --------------------
+        with comparison_tabs[4]:
+            st.markdown('<div class="section-kicker">CONTRADICTION REVIEW</div>', unsafe_allow_html=True)
+            st.header("Potentially contradictory claims")
+            st.markdown(
+                '<div class="section-description">'
+                'These are comparison-agent findings. They are shown separately from independent fact-check results.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            _render_comparison_items(contradictions, "No contradictions identified.")
+
+        # -------------------- Comparison Fact Check --------------------
+        with comparison_tabs[5]:
+            st.markdown('<div class="section-kicker">INDEPENDENT VERIFICATION</div>', unsafe_allow_html=True)
+            st.header("Fact Check")
+
+            st.subheader("Claims selected for verification")
+            _render_comparison_items(claims_to_fact_check, "No claims were selected for fact checking.")
+
+            st.divider()
+            st.subheader("Verification results")
+            _render_comparison_items(fact_check_results, "No comparison fact-check results available.")
+
