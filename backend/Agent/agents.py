@@ -20,7 +20,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 from typing import TypedDict, Annotated, Any, List, Dict
 import operator
 from dotenv import load_dotenv
-from youtube.ytTranscript import yt_transcript
+try:
+    from backend.youtube.ytTranscript import yt_transcript
+except ImportError:
+    from youtube.ytTranscript import yt_transcript
 from backend.schema.agent_schema import Summary, Key_points, FactCheckResult, Topics, ReferenceResult, QueAns, Claims, ComparisonResult
 load_dotenv()
 
