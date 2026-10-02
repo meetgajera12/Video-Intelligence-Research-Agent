@@ -19,6 +19,7 @@ faiss-cpu==1.15.0
 huggingface_hub==1.31.0
 
 youtube-transcript-api==1.2.4
+yt-dlp>=2024.0.0
 
 python-dotenv==1.2.3
 pydantic==2.13.5
