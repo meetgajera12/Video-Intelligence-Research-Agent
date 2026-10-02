@@ -6,6 +6,7 @@ if str(root_dir) not in sys.path:
 
 from fastapi import FastAPI, HTTPException
 import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 from backend.schema.user_input_schema import User
 from backend.Agent.agents import yt_agent, comparison_agent_, create_retriever
 from backend.youtube.ytID import extract_video_id
@@ -13,6 +14,16 @@ from backend.youtube.ytTranscript import yt_transcript
 
 
 app = FastAPI(title="Video Intelligence Research Agent")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://video-intelligence-research-agent-f.vercel.app",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get('/')
 def home():
@@ -189,4 +200,8 @@ def run(user: User):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="video-intelligence-research-agent-f.vercel.app", port=8000, reload=True)
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000)),
+    )
