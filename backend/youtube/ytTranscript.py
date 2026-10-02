@@ -1,57 +1,56 @@
-from __future__ import annotations
-
-import json
-import re
+import os
 import time
+import logging
 from collections import OrderedDict
-from html import unescape
 from typing import Optional
-from xml.etree import ElementTree
 
 import requests
+
 from youtube_transcript_api import YouTubeTranscriptApi
 
 
 # ============================================================
-# CONFIGURATION
+# CONFIG
 # ============================================================
 
-REQUEST_TIMEOUT = 20
+logger = logging.getLogger(__name__)
 
-# Successful transcripts kept in memory.
-# This prevents repeatedly fetching the same video.
+SUPADATA_API_KEY = os.getenv("SUPADATA_API_KEY")
+
+SUPADATA_URL = "https://api.supadata.ai/v1/transcript"
+
 CACHE_SIZE = 100
+REQUEST_TIMEOUT = 30
 
 
 # ============================================================
-# SIMPLE SUCCESS CACHE
+# SIMPLE IN-MEMORY CACHE
 # ============================================================
 
-_transcript_cache: OrderedDict[str, str] = OrderedDict()
+_transcript_cache = OrderedDict()
 
 
-def _get_cached(video_id: str) -> Optional[str]:
-    """
-    Return cached transcript if available.
-    Moves the item to the end so the cache behaves like LRU.
-    """
+def _cache_get(video_id: str) -> Optional[str]:
 
     if video_id not in _transcript_cache:
         return None
 
-    transcript = _transcript_cache.pop(video_id)
+    value = _transcript_cache.pop(video_id)
 
-    _transcript_cache[video_id] = transcript
+    # Move recently used item to the end
+    _transcript_cache[video_id] = value
 
-    print(f"[TRANSCRIPT] Cache HIT: {video_id}")
+    logger.info(
+        f"[TRANSCRIPT CACHE] HIT: {video_id}"
+    )
 
-    return transcript
+    return value
 
 
-def _set_cached(video_id: str, transcript: str) -> None:
-    """
-    Store a successful transcript in the cache.
-    """
+def _cache_set(video_id: str, transcript: str):
+
+    if not transcript:
+        return
 
     if video_id in _transcript_cache:
         _transcript_cache.pop(video_id)
@@ -61,1000 +60,432 @@ def _set_cached(video_id: str, transcript: str) -> None:
     while len(_transcript_cache) > CACHE_SIZE:
         _transcript_cache.popitem(last=False)
 
-    print(
-        f"[TRANSCRIPT] Cached: {video_id} "
-        f"({len(transcript):,} characters)"
+    logger.info(
+        f"[TRANSCRIPT CACHE] STORED: {video_id}"
     )
 
 
 # ============================================================
-# TRANSCRIPT NORMALIZATION
+# NORMALIZE TRANSCRIPT
 # ============================================================
 
-def _normalize_transcript(fetched) -> str:
-    """
-    Convert youtube-transcript-api output into plain text.
+def _normalize_transcript(data) -> str:
 
-    Supports current FetchedTranscript objects as well as
-    older list/dict-style responses.
-    """
-
-    try:
-
-        # Current youtube-transcript-api
-        if hasattr(fetched, "to_raw_data"):
-            items = fetched.to_raw_data()
-
-        elif isinstance(fetched, list):
-            items = fetched
-
-        else:
-            items = list(fetched)
-
-    except Exception as e:
-
-        print(
-            "[TRANSCRIPT] Failed to convert transcript:",
-            type(e).__name__,
-            str(e)
-        )
-
+    if not data:
         return ""
 
-    text_chunks = []
+    texts = []
 
-    for item in items:
+    # --------------------------------------------------------
+    # Supadata format
+    #
+    # {
+    #   "lang": "en",
+    #   "content": [
+    #       {
+    #           "text": "...",
+    #           "offset": 0,
+    #           "duration": 1000
+    #       }
+    #   ]
+    # }
+    # --------------------------------------------------------
 
-        text = ""
+    if isinstance(data, dict):
 
-        if isinstance(item, dict):
+        content = data.get("content")
 
-            text = item.get("text", "")
+        if isinstance(content, list):
 
-        else:
+            for item in content:
 
-            text = getattr(
-                item,
-                "text",
-                ""
-            )
+                if isinstance(item, dict):
 
-        if text is None:
-            continue
+                    text = item.get("text")
 
-        text = str(text).strip()
+                    if text:
+                        texts.append(str(text))
 
-        if not text:
-            continue
+                elif isinstance(item, str):
 
-        text_chunks.append(text)
+                    texts.append(item)
 
-    transcript = " ".join(text_chunks)
+            return " ".join(texts).strip()
 
-    # Normalize excessive whitespace
-    transcript = re.sub(
-        r"\s+",
-        " ",
-        transcript
-    ).strip()
+        # Sometimes APIs return text directly
 
-    return transcript
+        text = data.get("text")
 
+        if isinstance(text, str):
 
-# ============================================================
-# JSON3 PARSER
-# ============================================================
+            return text.strip()
 
-def _parse_json3(data: dict) -> str:
-    """
-    Parse YouTube JSON3 subtitle format.
-    """
+    # --------------------------------------------------------
+    # List format
+    # --------------------------------------------------------
 
-    events = data.get("events", [])
+    if isinstance(data, list):
 
-    text_chunks = []
+        for item in data:
 
-    for event in events:
+            if isinstance(item, dict):
 
-        segments = event.get(
-            "segs",
-            []
-        )
+                text = item.get("text")
 
-        for segment in segments:
+                if text:
+                    texts.append(str(text))
 
-            text = segment.get(
-                "utf8",
-                ""
-            )
+            elif isinstance(item, str):
 
-            if not text:
-                continue
+                texts.append(item)
 
-            # JSON3 sometimes contains newline markers
-            if text == "\n":
-                continue
+        return " ".join(texts).strip()
 
-            text = text.replace(
-                "\n",
-                " "
-            )
+    # --------------------------------------------------------
+    # Raw string
+    # --------------------------------------------------------
 
-            text = text.strip()
+    if isinstance(data, str):
 
-            if text:
-                text_chunks.append(text)
+        return data.strip()
 
-    return " ".join(text_chunks).strip()
+    return ""
 
 
 # ============================================================
-# VTT PARSER
+# SUPADATA
 # ============================================================
 
-def _parse_vtt(text: str) -> str:
-    """
-    Parse WebVTT subtitle text.
-    """
-
-    lines = text.splitlines()
-
-    output = []
-
-    for line in lines:
-
-        line = line.strip()
-
-        if not line:
-            continue
-
-        # Skip WEBVTT header
-        if line.upper().startswith("WEBVTT"):
-            continue
-
-        # Skip timestamps
-        if "-->" in line:
-            continue
-
-        # Skip common VTT metadata
-        if line.startswith(("NOTE", "STYLE", "REGION")):
-            continue
-
-        # Skip numeric cue indexes
-        if line.isdigit():
-            continue
-
-        # Remove basic HTML/VTT tags
-        line = re.sub(
-            r"<[^>]+>",
-            "",
-            line
-        )
-
-        line = unescape(line)
-
-        line = line.strip()
-
-        if line:
-            output.append(line)
-
-    return " ".join(output).strip()
-
-
-# ============================================================
-# SRV3 / XML PARSER
-# ============================================================
-
-def _parse_xml_subtitles(text: str) -> str:
-    """
-    Parse XML/SRV3 style subtitle formats.
-    """
-
-    try:
-
-        root = ElementTree.fromstring(text)
-
-    except Exception:
-
-        return ""
-
-    chunks = []
-
-    for element in root.iter():
-
-        if element.tag.lower().endswith("text"):
-
-            value = "".join(
-                element.itertext()
-            )
-
-            value = unescape(value)
-
-            value = value.replace(
-                "\n",
-                " "
-            )
-
-            value = re.sub(
-                r"\s+",
-                " ",
-                value
-            ).strip()
-
-            if value:
-                chunks.append(value)
-
-    return " ".join(chunks).strip()
-
-
-# ============================================================
-# DOWNLOAD SUBTITLE URL
-# ============================================================
-
-def _download_subtitle(
-    subtitle_url: str,
-    extension: Optional[str] = None
+def _fetch_supadata(
+    video_url: str,
+    video_id: str
 ) -> Optional[str]:
+
+    if not SUPADATA_API_KEY:
+
+        logger.warning(
+            "[SUPADATA] SUPADATA_API_KEY not configured"
+        )
+
+        return None
+
+    logger.info(
+        f"[SUPADATA] Fetching transcript for {video_id}"
+    )
 
     try:
 
         response = requests.get(
-            subtitle_url,
-            timeout=REQUEST_TIMEOUT,
+            SUPADATA_URL,
+            params={
+                "url": video_url
+            },
             headers={
-                "User-Agent": (
-                    "Mozilla/5.0 "
-                    "(Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) "
-                    "Chrome/142.0.0.0 Safari/537.36"
-                )
-            }
+                "x-api-key": SUPADATA_API_KEY
+            },
+            timeout=REQUEST_TIMEOUT
         )
 
-        response.raise_for_status()
-
-        content = response.text
-
-        if not content:
-            return None
-
-        # ----------------------------------------------------
-        # JSON3
-        # ----------------------------------------------------
-
-        if (
-            extension
-            and extension.lower() == "json3"
-        ):
-
-            try:
-
-                data = response.json()
-
-                result = _parse_json3(
-                    data
-                )
-
-                if result:
-                    return result
-
-            except Exception:
-
-                pass
-
-        # ----------------------------------------------------
-        # Try to detect JSON automatically
-        # ----------------------------------------------------
-
-        content_stripped = content.lstrip()
-
-        if (
-            content_stripped.startswith("{")
-            and '"events"' in content_stripped
-        ):
-
-            try:
-
-                data = json.loads(
-                    content_stripped
-                )
-
-                result = _parse_json3(
-                    data
-                )
-
-                if result:
-                    return result
-
-            except Exception:
-
-                pass
-
-        # ----------------------------------------------------
-        # VTT
-        # ----------------------------------------------------
-
-        if (
-            extension
-            and extension.lower() in {
-                "vtt",
-                "webvtt"
-            }
-        ):
-
-            result = _parse_vtt(
-                content
-            )
-
-            if result:
-                return result
-
-        # ----------------------------------------------------
-        # XML / SRV3
-        # ----------------------------------------------------
-
-        if (
-            extension
-            and extension.lower() in {
-                "srv3",
-                "srv2",
-                "srv1",
-                "ttml",
-                "xml"
-            }
-        ):
-
-            result = _parse_xml_subtitles(
-                content
-            )
-
-            if result:
-                return result
-
-        # ----------------------------------------------------
-        # Generic detection
-        # ----------------------------------------------------
-
-        if "WEBVTT" in content[:100]:
-
-            result = _parse_vtt(
-                content
-            )
-
-            if result:
-                return result
-
-        if (
-            content_stripped.startswith("<")
-            and "<text" in content_stripped
-        ):
-
-            result = _parse_xml_subtitles(
-                content
-            )
-
-            if result:
-                return result
-
-        # ----------------------------------------------------
-        # Last fallback
-        # ----------------------------------------------------
-
-        return re.sub(
-            r"\s+",
-            " ",
-            content
-        ).strip()
-
-    except requests.RequestException as e:
-
-        print(
-            "[YT-DLP] Subtitle HTTP request failed:",
-            type(e).__name__,
-            str(e)
+        logger.info(
+            f"[SUPADATA] HTTP {response.status_code}"
         )
 
-        return None
+        # ----------------------------------------------------
+        # Success
+        # ----------------------------------------------------
 
-    except Exception as e:
+        if response.status_code == 200:
 
-        print(
-            "[YT-DLP] Subtitle parsing failed:",
-            type(e).__name__,
-            str(e)
-        )
+            data = response.json()
 
-        return None
-
-
-# ============================================================
-# YT-DLP FALLBACK
-# ============================================================
-
-def _fetch_yt_dlp(
-    video_id: str
-) -> Optional[str]:
-
-    print(
-        f"[YT-DLP] Starting fallback for {video_id}"
-    )
-
-    try:
-
-        import yt_dlp
-
-    except ImportError:
-
-        print(
-            "[YT-DLP] yt-dlp is not installed."
-        )
-
-        return None
-
-    video_url = (
-        f"https://www.youtube.com/watch?v={video_id}"
-    )
-
-    ydl_opts = {
-
-        # Don't download the actual video
-        "skip_download": True,
-
-        # We need subtitles
-        "writesubtitles": True,
-
-        # We also want automatically generated subtitles
-        "writeautomaticsub": True,
-
-        # Don't download playlist
-        "noplaylist": True,
-
-        # Quiet logs
-        "quiet": True,
-
-        "no_warnings": True,
-
-        # Don't try to process video formats
-        "extract_flat": False,
-
-        # Prefer English subtitles
-        "subtitleslangs": [
-            "en",
-            "en-US",
-            "en-GB",
-        ],
-    }
-
-    try:
-
-        with yt_dlp.YoutubeDL(
-            ydl_opts
-        ) as ydl:
-
-            info = ydl.extract_info(
-                video_url,
-                download=False
-            )
-
-        if not info:
-
-            print(
-                "[YT-DLP] No video information returned."
-            )
-
-            return None
-
-        # ====================================================
-        # Get subtitle dictionaries
-        # ====================================================
-
-        subtitles = (
-            info.get("subtitles")
-            or {}
-        )
-
-        automatic_captions = (
-            info.get("automatic_captions")
-            or {}
-        )
-
-        print(
-            "[YT-DLP] Manual subtitle languages:",
-            list(subtitles.keys())[:20]
-        )
-
-        print(
-            "[YT-DLP] Automatic subtitle languages:",
-            list(automatic_captions.keys())[:20]
-        )
-
-        # Manual subtitles have priority
-        subtitle_sources = [
-            (
-                "manual",
-                subtitles
-            ),
-            (
-                "automatic",
-                automatic_captions
-            ),
-        ]
-
-        # ====================================================
-        # Language selection
-        # ====================================================
-
-        preferred_languages = [
-            "en",
-            "en-US",
-            "en-GB",
-        ]
-
-        selected_track = None
-        selected_language = None
-        selected_type = None
-
-        for source_type, source in subtitle_sources:
-
-            if not source:
-                continue
-
-            # First try preferred languages
-            for language in preferred_languages:
-
-                if language in source:
-
-                    selected_track = source[
-                        language
-                    ]
-
-                    selected_language = language
-                    selected_type = source_type
-
-                    break
-
-            if selected_track:
-                break
-
-            # ------------------------------------------------
-            # Sometimes YouTube returns variants like:
-            #
-            # en-US
-            # en-GB
-            # en-orig
-            # ------------------------------------------------
-
-            for language, track in source.items():
-
-                if language.lower().startswith(
-                    "en"
-                ):
-
-                    selected_track = track
-                    selected_language = language
-                    selected_type = source_type
-
-                    break
-
-            if selected_track:
-                break
-
-        # ====================================================
-        # If English doesn't exist, use first track
-        # ====================================================
-
-        if not selected_track:
-
-            for source_type, source in subtitle_sources:
-
-                if source:
-
-                    selected_language = next(
-                        iter(source)
-                    )
-
-                    selected_track = source[
-                        selected_language
-                    ]
-
-                    selected_type = source_type
-
-                    break
-
-        if not selected_track:
-
-            print(
-                f"[YT-DLP] No subtitle tracks found "
-                f"for {video_id}"
-            )
-
-            return None
-
-        print(
-            f"[YT-DLP] Selected "
-            f"{selected_type} subtitle: "
-            f"{selected_language}"
-        )
-
-        # ====================================================
-        # Try subtitle formats
-        # ====================================================
-
-        # Prefer structured formats first
-        preferred_formats = [
-            "json3",
-            "srv3",
-            "vtt",
-            "ttml",
-            "xml",
-        ]
-
-        # Sort available formats according to preference
-        formats = list(
-            selected_track
-        )
-
-        formats.sort(
-            key=lambda item: (
-                preferred_formats.index(
-                    item.get("ext", "").lower()
-                )
-                if item.get("ext", "").lower()
-                in preferred_formats
-                else 999
-            )
-        )
-
-        for fmt in formats:
-
-            subtitle_url = fmt.get(
-                "url"
-            )
-
-            extension = fmt.get(
-                "ext",
-                ""
-            )
-
-            if not subtitle_url:
-                continue
-
-            print(
-                f"[YT-DLP] Trying subtitle format: "
-                f"{extension}"
-            )
-
-            transcript = _download_subtitle(
-                subtitle_url,
-                extension
-            )
+            transcript = _normalize_transcript(data)
 
             if transcript:
 
-                print(
-                    f"[YT-DLP] SUCCESS "
-                    f"({len(transcript):,} characters)"
+                logger.info(
+                    f"[SUPADATA] SUCCESS: {video_id} "
+                    f"({len(transcript)} chars)"
                 )
 
                 return transcript
 
-        print(
-            f"[YT-DLP] All subtitle formats failed "
-            f"for {video_id}"
+            logger.warning(
+                f"[SUPADATA] Empty transcript: {video_id}"
+            )
+
+            return None
+
+        # ----------------------------------------------------
+        # Not found
+        # ----------------------------------------------------
+
+        if response.status_code == 404:
+
+            logger.warning(
+                f"[SUPADATA] Transcript unavailable: {video_id}"
+            )
+
+            return None
+
+        # ----------------------------------------------------
+        # Rate limit
+        # ----------------------------------------------------
+
+        if response.status_code == 429:
+
+            logger.warning(
+                "[SUPADATA] Rate limit reached"
+            )
+
+            return None
+
+        # ----------------------------------------------------
+        # Other errors
+        # ----------------------------------------------------
+
+        logger.error(
+            f"[SUPADATA] Error {response.status_code}: "
+            f"{response.text[:500]}"
+        )
+
+        return None
+
+    except requests.Timeout:
+
+        logger.error(
+            f"[SUPADATA] Timeout for {video_id}"
+        )
+
+        return None
+
+    except requests.RequestException as e:
+
+        logger.error(
+            f"[SUPADATA] Request failed: {e}"
         )
 
         return None
 
     except Exception as e:
 
-        print(
-            f"[YT-DLP] Extraction failed for {video_id}: "
-            f"{type(e).__name__}: {e}"
+        logger.exception(
+            f"[SUPADATA] Unexpected error: {e}"
         )
 
         return None
 
 
 # ============================================================
-# MAIN TRANSCRIPT FUNCTION
+# DIRECT YOUTUBE TRANSCRIPT API
 # ============================================================
 
-def yt_transcript(
+def _fetch_youtube_transcript(
     video_id: str
 ) -> Optional[str]:
 
-    """
-    Fetch the full YouTube transcript.
-
-    Order:
-
-        1. Cache
-        2. youtube-transcript-api direct fetch
-        3. youtube-transcript-api transcript list
-        4. yt-dlp fallback
-
-    Returns:
-        Full transcript string
-        or None if no transcript could be fetched.
-    """
-
-    # ========================================================
-    # Validate ID
-    # ========================================================
-
-    if not video_id:
-
-        print(
-            "[TRANSCRIPT] Empty video ID."
-        )
-
-        return None
-
-    video_id = str(
-        video_id
-    ).strip()
-
-    if not video_id:
-
-        print(
-            "[TRANSCRIPT] Empty video ID."
-        )
-
-        return None
-
-    print("=" * 70)
-
-    print(
-        f"[TRANSCRIPT] Request: {video_id}"
+    logger.info(
+        f"[YOUTUBE API] Trying direct transcript: {video_id}"
     )
 
-    print("=" * 70)
+    try:
+
+        api = YouTubeTranscriptApi()
+
+        # ----------------------------------------------------
+        # Try English first
+        # ----------------------------------------------------
+
+        try:
+
+            transcript = api.fetch(
+                video_id,
+                languages=[
+                    "en",
+                    "en-US",
+                    "en-GB"
+                ]
+            )
+
+            text = _normalize_transcript(
+                transcript.to_raw_data()
+                if hasattr(transcript, "to_raw_data")
+                else transcript
+            )
+
+            if text:
+
+                logger.info(
+                    f"[YOUTUBE API] SUCCESS: {video_id}"
+                )
+
+                return text
+
+        except Exception as e:
+
+            logger.warning(
+                f"[YOUTUBE API] English fetch failed: {e}"
+            )
+
+        # ----------------------------------------------------
+        # Try available transcripts
+        # ----------------------------------------------------
+
+        try:
+
+            transcript_list = api.list(video_id)
+
+            selected = None
+
+            # Prefer manually created transcript
+
+            for transcript in transcript_list:
+
+                if not transcript.is_generated:
+
+                    selected = transcript
+                    break
+
+            # Otherwise generated transcript
+
+            if selected is None:
+
+                for transcript in transcript_list:
+
+                    if transcript.is_generated:
+
+                        selected = transcript
+                        break
+
+            if selected is None:
+
+                logger.warning(
+                    f"[YOUTUBE API] No transcript found: {video_id}"
+                )
+
+                return None
+
+            fetched = selected.fetch()
+
+            text = _normalize_transcript(
+                fetched.to_raw_data()
+                if hasattr(fetched, "to_raw_data")
+                else fetched
+            )
+
+            if text:
+
+                logger.info(
+                    f"[YOUTUBE API] SUCCESS via available track: "
+                    f"{video_id}"
+                )
+
+                return text
+
+        except Exception as e:
+
+            logger.warning(
+                f"[YOUTUBE API] Track lookup failed: {e}"
+            )
+
+    except Exception as e:
+
+        logger.warning(
+            f"[YOUTUBE API] Failed: {e}"
+        )
+
+    return None
+
+
+# ============================================================
+# MAIN FUNCTION
+# ============================================================
+
+def yt_transcript(
+    video_id: str,
+    video_url: Optional[str] = None
+) -> Optional[str]:
+
+    """
+    Fetch a YouTube transcript.
+
+    Priority:
+
+        1. Cache
+        2. Supadata
+        3. Direct YouTubeTranscriptApi
+        4. Return None
+
+    Supadata is intentionally first for production because
+    Render/cloud IPs can be blocked by YouTube.
+    """
+
+    if not video_id:
+
+        logger.error(
+            "[TRANSCRIPT] Empty video ID"
+        )
+
+        return None
+
+    video_id = str(video_id).strip()
+
+    if not video_url:
+
+        video_url = (
+            f"https://www.youtube.com/watch?v={video_id}"
+        )
+
+    logger.info(
+        f"[TRANSCRIPT] Starting for {video_id}"
+    )
 
     # ========================================================
     # CACHE
     # ========================================================
 
-    cached = _get_cached(
-        video_id
-    )
+    cached = _cache_get(video_id)
 
     if cached:
 
         return cached
 
     # ========================================================
-    # Initialize youtube-transcript-api
+    # METHOD 1 — SUPADATA
     # ========================================================
 
-    try:
+    if SUPADATA_API_KEY:
 
-        api = YouTubeTranscriptApi()
-
-    except Exception as e:
-
-        print(
-            "[YOUTUBE-TRANSCRIPT-API] "
-            "Initialization failed:",
-            type(e).__name__,
-            str(e)
+        transcript = _fetch_supadata(
+            video_url=video_url,
+            video_id=video_id
         )
 
-        api = None
+        if transcript:
 
-    # ========================================================
-    # METHOD 1
-    # Direct fetch
-    # ========================================================
-
-    if api:
-
-        print(
-            "[YOUTUBE-TRANSCRIPT-API] "
-            "Method 1: direct fetch"
-        )
-
-        try:
-
-            fetched = api.fetch(
+            _cache_set(
                 video_id,
-                languages=[
-                    "en",
-                    "en-US",
-                    "en-GB",
-                ]
+                transcript
             )
 
-            transcript = _normalize_transcript(
-                fetched
-            )
+            return transcript
 
-            if transcript:
+    else:
 
-                print(
-                    "[YOUTUBE-TRANSCRIPT-API] "
-                    f"SUCCESS: {len(transcript):,} characters"
-                )
-
-                _set_cached(
-                    video_id,
-                    transcript
-                )
-
-                return transcript
-
-            print(
-                "[YOUTUBE-TRANSCRIPT-API] "
-                "Direct fetch returned empty transcript."
-            )
-
-        except Exception as e:
-
-            print(
-                "[YOUTUBE-TRANSCRIPT-API] "
-                f"Direct fetch FAILED: "
-                f"{type(e).__name__}: {e}"
-            )
-
-    # ========================================================
-    # METHOD 2
-    # List available transcripts
-    # ========================================================
-
-    if api:
-
-        print(
-            "[YOUTUBE-TRANSCRIPT-API] "
-            "Method 2: list available transcripts"
+        logger.warning(
+            "[TRANSCRIPT] SUPADATA_API_KEY missing"
         )
 
-        try:
-
-            transcript_list = api.list(
-                video_id
-            )
-
-            available = []
-
-            try:
-
-                for item in transcript_list:
-
-                    available.append(
-                        {
-                            "language": getattr(
-                                item,
-                                "language",
-                                None
-                            ),
-                            "language_code": getattr(
-                                item,
-                                "language_code",
-                                None
-                            ),
-                            "is_generated": getattr(
-                                item,
-                                "is_generated",
-                                None
-                            ),
-                        }
-                    )
-
-            except Exception:
-                pass
-
-            print(
-                "[YOUTUBE-TRANSCRIPT-API] "
-                f"Available transcripts: {available}"
-            )
-
-            # ------------------------------------------------
-            # Try English
-            # ------------------------------------------------
-
-            transcript_obj = None
-
-            try:
-
-                transcript_obj = (
-                    transcript_list.find_transcript(
-                        [
-                            "en",
-                            "en-US",
-                            "en-GB",
-                        ]
-                    )
-                )
-
-            except Exception as e:
-
-                print(
-                    "[YOUTUBE-TRANSCRIPT-API] "
-                    "English transcript not found:",
-                    type(e).__name__,
-                    str(e)
-                )
-
-            # ------------------------------------------------
-            # If English unavailable, use first transcript
-            # ------------------------------------------------
-
-            if transcript_obj is None:
-
-                try:
-
-                    transcript_obj = next(
-                        iter(transcript_list)
-                    )
-
-                    print(
-                        "[YOUTUBE-TRANSCRIPT-API] "
-                        "Using first available language."
-                    )
-
-                except Exception as e:
-
-                    print(
-                        "[YOUTUBE-TRANSCRIPT-API] "
-                        "No transcript tracks available:",
-                        type(e).__name__,
-                        str(e)
-                    )
-
-                    transcript_obj = None
-
-            # ------------------------------------------------
-            # Fetch selected transcript
-            # ------------------------------------------------
-
-            if transcript_obj is not None:
-
-                fetched = transcript_obj.fetch()
-
-                transcript = _normalize_transcript(
-                    fetched
-                )
-
-                if transcript:
-
-                    print(
-                        "[YOUTUBE-TRANSCRIPT-API] "
-                        f"LIST SUCCESS: "
-                        f"{len(transcript):,} characters"
-                    )
-
-                    _set_cached(
-                        video_id,
-                        transcript
-                    )
-
-                    return transcript
-
-        except Exception as e:
-
-            print(
-                "[YOUTUBE-TRANSCRIPT-API] "
-                f"List/fetch FAILED: "
-                f"{type(e).__name__}: {e}"
-            )
-
     # ========================================================
-    # METHOD 3
-    # yt-dlp
+    # METHOD 2 — DIRECT YOUTUBE
     # ========================================================
 
-    print(
-        "[TRANSCRIPT] "
-        "Trying yt-dlp fallback..."
-    )
-
-    transcript = _fetch_yt_dlp(
+    transcript = _fetch_youtube_transcript(
         video_id
     )
 
     if transcript:
 
-        _set_cached(
+        _cache_set(
             video_id,
             transcript
         )
@@ -1062,39 +493,11 @@ def yt_transcript(
         return transcript
 
     # ========================================================
-    # ALL METHODS FAILED
+    # ALL FAILED
     # ========================================================
 
-    print("=" * 70)
-
-    print(
+    logger.error(
         f"[TRANSCRIPT] ALL METHODS FAILED: {video_id}"
     )
-
-    print(
-        "[TRANSCRIPT] Possible causes:"
-    )
-
-    print(
-        "  1. Video has no captions."
-    )
-
-    print(
-        "  2. Video is private/unavailable."
-    )
-
-    print(
-        "  3. YouTube is blocking the Render IP."
-    )
-
-    print(
-        "  4. YouTube changed its transcript/caption behavior."
-    )
-
-    print(
-        "  5. Video is age/location restricted."
-    )
-
-    print("=" * 70)
 
     return None

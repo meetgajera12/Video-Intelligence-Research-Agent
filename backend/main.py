@@ -92,14 +92,19 @@ def run(user: User):
     # FETCH TRANSCRIPT 1
     # =====================================================
 
-    transcript = yt_transcript(video_id)
+    transcript = yt_transcript(
+    video_id=video_id,
+    video_url=video_url
+)
 
     if not transcript:
+
         raise HTTPException(
             status_code=404,
             detail=(
-                "No transcript available for this video "
-                "(disabled, private, or not found)"
+                "Unable to retrieve a transcript for this video. "
+                "The video may be private, unavailable, or have "
+                "no accessible transcript."
             )
         )
 
@@ -182,14 +187,19 @@ def run(user: User):
     # VIDEO 2 TRANSCRIPT
     # =====================================================
 
-    transcript2 = yt_transcript(video2_id)
+    transcript2 = yt_transcript(
+    video_id=video2_id,
+    video_url=video2_url
+)
 
     if not transcript2:
+
         raise HTTPException(
             status_code=404,
             detail=(
-                "No transcript available for the second video "
-                "(disabled, private, or not found)"
+                "Unable to retrieve a transcript for this video. "
+                "The video may be private, unavailable, or have "
+                "no accessible transcript."
             )
         )
 
