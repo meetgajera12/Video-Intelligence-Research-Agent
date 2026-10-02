@@ -67,13 +67,13 @@ def run(user: User):
 
         if not transcript:
             raise HTTPException(
-                status_code=404,
-                detail="No transcript available for this video (disabled, private, or not found)"
+                status_code=400,
+                detail="No transcript available for Video A (disabled, private, or not found)"
             )
         if not transcript2:
             raise HTTPException(
-                status_code=404,
-                detail="No transcript available for this video (disabled, private, or not found)"
+                status_code=400,
+                detail="No transcript available for Video B (disabled, private, or not found)"
             )
 
         try:
@@ -159,7 +159,7 @@ def run(user: User):
 
         if not transcript:
             raise HTTPException(
-                status_code=404,
+                status_code=400,
                 detail="No transcript available for this video (disabled, private, or not found)"
             )
 
