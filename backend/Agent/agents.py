@@ -9,7 +9,6 @@ if str(root_dir) not in sys.path:
 
 from huggingface_hub import InferenceClient
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_tavily import TavilySearch
 from langchain_community.vectorstores import FAISS
