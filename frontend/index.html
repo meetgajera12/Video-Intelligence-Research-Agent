@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Video Intelligence Research Workspace" />
+  <title>Video Intelligence Agent</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="grain"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-inner">
+      <div class="brand-small">VIDEO INTELLIGENCE</div>
+      <p class="sidebar-help">Paste a public YouTube URL, then analyze it once. The results become your research workspace.</p>
+
+      <label for="videoUrlInput">YouTube Video URL</label>
+      <input id="videoUrlInput" type="url" placeholder="https://www.youtube.com/watch?v=..." />
+
+      <button class="btn full" id="analyzeBtn">🔍 Analyze Video</button>
+      <button class="btn full danger-btn hidden" id="clearBtn">🗑️ Clear Analysis</button>
+
+      <div class="sidebar-footer">
+        <span class="status-dot"></span>
+        <span>Research mode</span>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="workspace-meta"><span class="status-dot"></span> Research mode</div>
+
+    <div class="product-label">VIDEO INTELLIGENCE / RESEARCH WORKSPACE</div>
+    <h1>Understand the video. Go deeper.</h1>
+    <p class="app-subtitle">A research workspace for turning long-form YouTube content into structured evidence, references, and grounded conversation.</p>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <section id="emptyState" class="content-card">
+      <div class="section-kicker">START HERE</div>
+      <div class="content-card-title">Analyze a YouTube video</div>
+      <div class="content-card-text">Enter a public YouTube URL above. The workspace will build a transcript, summary, key points, claims, topics, references, and Q&amp;A context.</div>
+      <div class="action-note">Your results will appear here after analysis.</div>
+    </section>
+
+    <section id="workspace" class="hidden">
+      <nav class="main-tabs">
+        <button class="main-tab active" data-main-tab="analysis">🎥 Video Analysis</button>
+        <button class="main-tab" data-main-tab="comparison">⚖️ Comparison</button>
+      </nav>
+
+      <div id="analysisView">
+        <section class="panel">
+          <div class="section-kicker">VIDEO CONTEXT</div>
+          <div class="source-card">
+            <div class="source-label">Analyzed source</div>
+            <div class="source-url" id="sourceUrl"></div>
+          </div>
+
+          <div class="overview-label">At a glance</div>
+          <div class="overview-grid">
+            <div class="overview-card"><div class="overview-value" id="metricTranscript">—</div><div class="overview-name">Transcript</div></div>
+            <div class="overview-card"><div class="overview-value" id="metricKeyPoints">0</div><div class="overview-name">Key points</div></div>
+            <div class="overview-card"><div class="overview-value" id="metricClaims">0</div><div class="overview-name">Claims</div></div>
+            <div class="overview-card"><div class="overview-value" id="metricReferences">0</div><div class="overview-name">References</div></div>
+          </div>
+        </section>
+
+        <nav class="sub-tabs" id="analysisTabs">
+          <button class="sub-tab active" data-tab="transcript">📜 Transcript</button>
+          <button class="sub-tab" data-tab="summary">📝 Summary</button>
+          <button class="sub-tab" data-tab="keypoints">🔑 Key Points</button>
+          <button class="sub-tab" data-tab="claims">✅ Claims &amp; Fact Check</button>
+          <button class="sub-tab" data-tab="topics">🏷️ Topics</button>
+          <button class="sub-tab" data-tab="references">📚 References</button>
+          <button class="sub-tab" data-tab="qa">💬 Q&amp;A</button>
+        </nav>
+
+        <div id="analysisContent"></div>
+      </div>
+
+      <div id="comparisonView" class="hidden">
+        <section>
+          <div class="section-kicker">VIDEO COMPARISON</div>
+          <h2>Compare two videos</h2>
+          <p class="section-description">Compare claims, topics, similarities, differences, contradictions, and independently verified claims across two videos.</p>
+
+          <div class="compare-input-grid">
+            <div>
+              <div class="overview-label">VIDEO A · CURRENT VIDEO</div>
+              <input id="videoAInput" type="url" disabled />
+            </div>
+            <div>
+              <div class="overview-label">VIDEO B · SECOND VIDEO</div>
+              <input id="videoBInput" type="url" placeholder="https://www.youtube.com/watch?v=..." />
+            </div>
+          </div>
+          <button class="btn primary full" id="compareBtn">⚖️ Compare Videos</button>
+        </section>
+
+        <section id="comparisonResults" class="hidden"></section>
+      </div>
+    </section>
+  </main>
+
+  <div id="loading" class="loading hidden">
+    <div class="spinner"></div>
+    <div>
+      <strong id="loadingTitle">Analyzing transcript &amp; running research agents...</strong>
+      <span id="loadingText">This can take a while.</span>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
