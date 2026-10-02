@@ -1,4 +1,5 @@
 import time
+import os
 import re
 import sys
 from pathlib import Path
@@ -6,6 +7,7 @@ root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
+from huggingface_hub import InferenceClient
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -26,9 +28,32 @@ load_dotenv()
 
 
 # embedding model
-embedding = HuggingFaceEmbeddings(
-        model_name="BAAI/bge-small-en-v1.5"
-    )
+class HFAPIEmbeddings:
+
+    def __init__(self):
+        self.client = InferenceClient(
+            provider="hf-inference",
+            api_key=os.getenv("HF_TOKEN")
+        )
+        self.model = "BAAI/bge-small-en-v1.5"
+
+    def embed_documents(self, texts):
+        return [
+            self.client.feature_extraction(
+                text,
+                model=self.model
+            ).tolist()
+            for text in texts
+        ]
+
+    def embed_query(self, text):
+        return self.client.feature_extraction(
+            text,
+            model=self.model
+        ).tolist()
+
+
+embedding = HFAPIEmbeddings()
 
 # retriever
 def create_retriever(transcript: str):
