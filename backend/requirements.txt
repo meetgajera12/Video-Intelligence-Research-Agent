@@ -25,5 +25,6 @@ pydantic==2.13.5
 pydantic-settings==2.15.0
 
 numpy==2.5.3
+scikit-learn==1.8.0
 requests==2.34.2
 httpx==0.28.1
