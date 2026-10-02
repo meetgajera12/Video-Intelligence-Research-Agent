@@ -17,9 +17,7 @@ from backend.youtube.ytTranscript import yt_transcript
 app = FastAPI(title="Video Intelligence Research Agent")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://video-intelligence-research-agent-f.vercel.app",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,6 +31,14 @@ def home():
 @app.get('/health')
 def health_check():
     return {'status': 'OK'}
+
+@app.get('/agentRun')
+def run_info():
+    return {
+        'status': 'online',
+        'endpoint': '/agentRun',
+        'message': 'This endpoint accepts POST requests with a JSON body: {"yt_url": "https://www.youtube.com/watch?v=..."}'
+    }
 
 
 @app.post('/agentRun')
