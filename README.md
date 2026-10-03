@@ -33,6 +33,9 @@ Instead of manually watching a long video, the system processes the video transc
 The backend is built with **FastAPI**, while **LangGraph** is used to orchestrate the agent workflow.
 
 ---
+## 🚀 Live Demo  [🔗 Try Video Intelligence Research Agent](https://video-intelligence-research-agent-f.vercel.app/)
+
+
 
 ## ✨ Features
 
@@ -44,7 +47,7 @@ The backend is built with **FastAPI**, while **LangGraph** is used to orchestrat
 - 🧩 Topic identification
 - 📌 Claim extraction
 - 🔎 Web/reference search
-- 🆚 comparison between two videos
+- 🆚 Comparison between videos
 - 🧠 Structured research output
 - ⚡ FastAPI backend
 - 🌐 Separate frontend
@@ -55,7 +58,7 @@ The backend is built with **FastAPI**, while **LangGraph** is used to orchestrat
 ## 🧠 Agent Workflow
 
 ```text
-                    YouTube URL
+                   YouTube URL
                          │
                          ▼
               ┌────────────────────┐
@@ -105,21 +108,44 @@ The application retrieves the available transcript/data for the video using the 
 
 The transcript is passed through the LangGraph workflow.
 
-Different stages of the workflow process the content for:
+Different branches of the workflow process the content for:
 
 - Summary
 - Key points
 - Topics
 - Claims
 - References
+- Question answering
 
 ### 4. Research
 
-Relevant claims and topics can be used for external web research.
+Relevant claims and topics are used for external web research through the reference workflow.
 
-### 5. Final Output
+### 5. Video Comparison
 
-The individual results are combined into a structured research response and returned to the frontend.
+The system also supports comparing two YouTube videos.
+
+For each video, the system independently extracts:
+
+- Claims
+- Topics
+
+The extracted information from both videos is then passed to the comparison agent.
+
+```text
+Video A ──→ Claim Extractor A ──┐
+                                │
+Video B ──→ Claim Extractor B ──┤
+                                │
+Video A ──→ Topic Agent A ──────┤
+                                │
+Video B ──→ Topic Agent B ──────┘
+                                │
+                                ▼
+                       Comparison Agent
+                                │
+                                ▼
+                       Comparison Output
 
 ---
 
@@ -158,6 +184,7 @@ Video-Intelligence-Research-Agent/
 | `main.py` | FastAPI application and API endpoints |
 | `agents.py` | LangGraph agent workflow and agent logic |
 | `agent_schema.py` | Structured schemas for agent state and output |
+|`user_input_schema.py`| Structured schema for user inputs|
 | `youtube.py` | YouTube transcript/data processing |
 | `requirements.txt` | Python dependencies |
 
@@ -240,7 +267,6 @@ SUPADATA_API_KEY=your_supadata_api_key
 | `TAVILY_API_KEY` | Web search and research |
 | `SUPADATA_API_KEY` | YouTube transcript/data access |
 
-> **Never commit your `.env` file or API keys to GitHub.**
 
 ---
 
@@ -249,7 +275,7 @@ SUPADATA_API_KEY=your_supadata_api_key
 From the `backend` directory:
 
 ```bash
-uvicorn main:app --reload
+uvicorn backend.main:app --reload
 ```
 
 The backend will be available at:
@@ -363,13 +389,9 @@ AI-generated claims and research results should be independently verified when a
 ## 🔮 Future Improvements
 
 - [ ] Timestamp-based citations
-- [ ] Multi-video research
-- [ ] Claim verification
 - [ ] Source credibility analysis
 - [ ] Research history
 - [ ] PDF/Markdown export
-- [ ] Streaming agent execution
-- [ ] Persistent research sessions
 
 ---
 
@@ -377,7 +399,7 @@ AI-generated claims and research results should be independently verified when a
 
 **Meet Gajera**
 
-Engineering Student | Data Science & AI
+Ai/Ml Student
 
 [GitHub](https://github.com/meetgajera12)
 
