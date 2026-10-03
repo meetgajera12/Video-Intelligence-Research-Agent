@@ -68,7 +68,18 @@ class HFAPIEmbeddings(Embeddings):
 embedding = HFAPIEmbeddings()
 
 # retriever
+# Keep the retriever in memory so it is not rebuilt for every Q&A request.
+cached_transcript = None
+cached_retriever = None
+
+
 def create_retriever(transcript: str):
+
+    global cached_transcript, cached_retriever
+
+    # Reuse the existing retriever for the same video.
+    if cached_retriever is not None and cached_transcript == transcript:
+        return cached_retriever
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
@@ -77,17 +88,19 @@ def create_retriever(transcript: str):
 
     chunks = splitter.create_documents([transcript])
 
-
     vector_store = FAISS.from_documents(
         chunks,
         embedding
     )
 
-    return vector_store.as_retriever(
+    cached_retriever = vector_store.as_retriever(
         search_type="similarity",
         search_kwargs={"k": 5}
     )
 
+    cached_transcript = transcript
+
+    return cached_retriever
 
 
 # LLM model
