@@ -15,6 +15,7 @@ from langchain_community.vectorstores import FAISS
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Send
 from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.embeddings import Embeddings
 from langchain_core.prompts import ChatPromptTemplate
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import TypedDict, Annotated, Any, List, Dict
@@ -30,29 +31,38 @@ load_dotenv()
 
 
 # embedding model
-class HFAPIEmbeddings:
+class HFAPIEmbeddings(Embeddings):
 
     def __init__(self):
+        super().__init__()
+
         self.client = InferenceClient(
             provider="hf-inference",
             api_key=os.getenv("HF_TOKEN")
         )
+
         self.model = "BAAI/bge-small-en-v1.5"
 
-    def embed_documents(self, texts):
-        return [
-            self.client.feature_extraction(
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        embeddings = []
+
+        for text in texts:
+            vector = self.client.feature_extraction(
                 text,
                 model=self.model
-            ).tolist()
-            for text in texts
-        ]
+            )
 
-    def embed_query(self, text):
-        return self.client.feature_extraction(
+            embeddings.append(vector.tolist())
+
+        return embeddings
+
+    def embed_query(self, text: str) -> list[float]:
+        vector = self.client.feature_extraction(
             text,
             model=self.model
-        ).tolist()
+        )
+
+        return vector.tolist()
 
 
 embedding = HFAPIEmbeddings()
