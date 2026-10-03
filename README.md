@@ -146,7 +146,7 @@ Video B ──→ Topic Agent B ──────┘
                                 │
                                 ▼
                        Comparison Output
-
+```
 ---
 
 ## 🏗️ Project Structure
@@ -401,7 +401,7 @@ AI-generated claims and research results should be independently verified when a
 
 Ai/Ml Student
 
-[GitHub](https://github.com/meetgajera12)
+[GitHub](https://github.com/meetgajera12)  [Linkdin](https://www.linkedin.com/in/meet-gajera-12m32006/)  [Kaggle](https://www.kaggle.com/mitgajera)
 
 ---
 
