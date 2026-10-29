@@ -3,47 +3,109 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Video Intelligence Research Workspace" />
+  <meta name="description" content="Video Intelligence Research Workspace - Multi-Agent YouTube Analysis" />
   <title>Video Intelligence Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
   <div class="grain"></div>
 
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-inner">
-      <div class="brand-small">VIDEO INTELLIGENCE</div>
-      <p class="sidebar-help">Paste a public YouTube URL, then analyze it once. The results become your research workspace.</p>
+  <!-- Top Navigation Header -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-emblem">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+          </svg>
+        </div>
+        <div class="brand-text-group">
+          <span class="brand-title">VIDEO INTELLIGENCE</span>
+          <span class="brand-badge">RESEARCH AGENT</span>
+        </div>
+      </div>
 
-      <label for="videoUrlInput">YouTube Video URL</label>
-      <input id="videoUrlInput" type="url" placeholder="https://www.youtube.com/watch?v=..." />
-
-      <button class="btn full" id="analyzeBtn">🔍 Analyze Video</button>
-      <button class="btn full danger-btn hidden" id="clearBtn">🗑️ Clear Analysis</button>
-
-      <div class="sidebar-footer">
-        <span class="status-dot"></span>
-        <span>Research mode</span>
+      <div class="topbar-actions">
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span class="status-label">Research Mode Active</span>
+        </div>
+        <button class="btn danger-btn hidden" id="clearBtn">🗑️ Clear Analysis</button>
       </div>
     </div>
-  </aside>
+  </header>
 
-  <main class="main">
-    <div class="workspace-meta"><span class="status-dot"></span> Research mode</div>
+  <!-- Main Content Layout (Full Width & Centered) -->
+  <main class="main-container">
+    <section class="hero-section">
+      <div class="product-badge">MULTI-AGENT VIDEO RESEARCH</div>
+      <h1>Understand any video. <span class="highlight-crimson">Go deeper.</span></h1>
+      <p class="app-subtitle">Turn long-form YouTube content into structured evidence, verified claims, citations, and grounded conversational inquiry.</p>
 
-    <div class="product-label">VIDEO INTELLIGENCE / RESEARCH WORKSPACE</div>
-    <h1>Understand the video. Go deeper.</h1>
-    <p class="app-subtitle">A research workspace for turning long-form YouTube content into structured evidence, references, and grounded conversation.</p>
+      <!-- Center Hero Command Bar -->
+      <div class="hero-search-wrapper">
+        <div class="hero-search-box">
+          <span class="search-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21.58 7.19a2.7 2.7 0 0 0-1.9-1.9C18 4.75 12 4.75 12 4.75s-6 0-7.68.54a2.7 2.7 0 0 0-1.9 1.9C1.88 8.87 1.88 12 1.88 12s0 3.13.54 4.81a2.7 2.7 0 0 0 1.9 1.9c1.68.54 7.68.54 7.68.54s6 0 7.68-.54a2.7 2.7 0 0 0 1.9-1.9c.54-1.68.54-4.81.54-4.81s0-3.13-.54-4.81zM9.75 15.02V8.98l5.5 3.02-5.5 3.02z"/>
+            </svg>
+          </span>
+          <input id="videoUrlInput" type="url" placeholder="Paste a public YouTube video URL (e.g. https://www.youtube.com/watch?v=...)" autocomplete="off" />
+          <button class="btn primary" id="analyzeBtn">🔍 Analyze Video</button>
+        </div>
+
+        <div class="search-features-bar">
+          <div class="feature-tag"><span class="tag-dot">●</span> Full Transcript Synthesis</div>
+          <div class="feature-tag"><span class="tag-dot">●</span> Multi-Agent Fact Checking</div>
+          <div class="feature-tag"><span class="tag-dot">●</span> Structured Takeaways</div>
+          <div class="feature-tag"><span class="tag-dot">●</span> Dual-Video Comparison</div>
+        </div>
+      </div>
+    </section>
 
     <div id="toast" class="toast hidden"></div>
 
-    <section id="emptyState" class="content-card">
-      <div class="section-kicker">START HERE</div>
-      <div class="content-card-title">Analyze a YouTube video</div>
-      <div class="content-card-text">Enter a public YouTube URL above. The workspace will build a transcript, summary, key points, claims, topics, references, and Q&amp;A context.</div>
-      <div class="action-note">Your results will appear here after analysis.</div>
+    <!-- Empty State: Capabilities Showcase -->
+    <section id="emptyState" class="content-card empty-hero-card">
+      <div class="empty-hero-header">
+        <div class="section-kicker">INTELLIGENCE PIPELINE</div>
+        <div class="content-card-title">Everything you need to deeply research video content</div>
+        <div class="content-card-text">Enter any YouTube URL in the search box above to run the multi-agent research pipeline. In moments, the AI transcribes, analyzes, verifies claims against web sources, and prepares an interactive workspace.</div>
+      </div>
+
+      <div class="capabilities-grid">
+        <div class="cap-card">
+          <div class="cap-icon-box">📜</div>
+          <div class="cap-title">Transcript &amp; Summary</div>
+          <div class="cap-desc">Full timestamped speech transcription paired with a dense executive summary.</div>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon-box">🔑</div>
+          <div class="cap-title">Key Points &amp; Topics</div>
+          <div class="cap-desc">Structured takeaway identification with automatic thematic subject categorization.</div>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon-box">✅</div>
+          <div class="cap-title">Claims &amp; Fact Check</div>
+          <div class="cap-desc">Isolates objective factual assertions and runs independent web verification checks.</div>
+        </div>
+        <div class="cap-card">
+          <div class="cap-icon-box">💬</div>
+          <div class="cap-title">Grounded Q&amp;A</div>
+          <div class="cap-desc">Explore nuances through conversational inquiry locked strictly to analyzed video evidence.</div>
+        </div>
+      </div>
+
+      <div class="action-note">
+        <span class="pulse-icon">💡</span>
+        <span>Ready when you are. Paste a YouTube link in the search bar above and click <strong>Analyze Video</strong>.</span>
+      </div>
     </section>
 
+    <!-- Workspace View (Appears on Analysis) -->
     <section id="workspace" class="hidden">
       <nav class="main-tabs">
         <button class="main-tab active" data-main-tab="analysis">🎥 Video Analysis</button>
@@ -81,17 +143,17 @@
       </div>
 
       <div id="comparisonView" class="hidden">
-        <section>
+        <section class="panel">
           <div class="section-kicker">VIDEO COMPARISON</div>
           <h2>Compare two videos</h2>
           <p class="section-description">Compare claims, topics, similarities, differences, contradictions, and independently verified claims across two videos.</p>
 
           <div class="compare-input-grid">
-            <div>
+            <div class="compare-box">
               <div class="overview-label">VIDEO A · CURRENT VIDEO</div>
               <input id="videoAInput" type="url" disabled />
             </div>
-            <div>
+            <div class="compare-box">
               <div class="overview-label">VIDEO B · SECOND VIDEO</div>
               <input id="videoBInput" type="url" placeholder="https://www.youtube.com/watch?v=..." />
             </div>
@@ -104,6 +166,7 @@
     </section>
   </main>
 
+  <!-- Loading State -->
   <div id="loading" class="loading hidden">
     <div class="spinner"></div>
     <div>
