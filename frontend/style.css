@@ -69,11 +69,12 @@ body {
   background-attachment: fixed;
   color: var(--text-body);
   font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 1.65;
+  font-size: 17px;
+  line-height: 1.7;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* Subtle organic grain overlay */
@@ -272,8 +273,9 @@ h1 {
   max-width: 740px;
   margin: 0 auto 36px;
   color: var(--text-body);
-  font-size: 1.12rem;
-  line-height: 1.7;
+  font-size: 1.18rem;
+  line-height: 1.75;
+  font-weight: 450;
 }
 
 /* ==========================================================================
@@ -381,7 +383,7 @@ h1 {
 
 .feature-tag {
   color: var(--text-muted);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 550;
   display: flex;
   align-items: center;
@@ -708,8 +710,8 @@ h3 {
   padding: 26px 28px;
   margin: 16px 0;
   color: #f1f5f9;
-  line-height: 1.82;
-  font-size: 0.96rem;
+  line-height: 1.85;
+  font-size: 1.02rem;
   overflow-wrap: anywhere;
   box-shadow: var(--shadow-md);
 }
@@ -1114,6 +1116,33 @@ h3 {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ==========================================================================
+   Free Tier Note
+   ========================================================================== */
+.free-tier-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 18px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 10px;
+  color: #fbbf24;
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.free-tier-note .note-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.free-tier-note strong {
+  color: #fde68a;
 }
 
 /* ==========================================================================
