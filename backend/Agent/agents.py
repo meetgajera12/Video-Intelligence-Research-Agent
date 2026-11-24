@@ -7,7 +7,6 @@ root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-from huggingface_hub import InferenceClient
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_tavily import TavilySearch
@@ -18,6 +17,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.embeddings import Embeddings
 from langchain_core.prompts import ChatPromptTemplate
 from sklearn.metrics.pairwise import cosine_similarity
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from typing import TypedDict, Annotated, Any, List, Dict
 import operator
 from dotenv import load_dotenv
@@ -30,42 +30,11 @@ load_dotenv()
 
 
 
-# embedding model
-class HFAPIEmbeddings(Embeddings):
-
-    def __init__(self):
-        super().__init__()
-
-        self.client = InferenceClient(
-            provider="hf-inference",
-            api_key=os.getenv("HF_TOKEN")
-        )
-
-        self.model = "BAAI/bge-small-en-v1.5"
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        embeddings = []
-
-        for text in texts:
-            vector = self.client.feature_extraction(
-                text,
-                model=self.model
-            )
-
-            embeddings.append(vector.tolist())
-
-        return embeddings
-
-    def embed_query(self, text: str) -> list[float]:
-        vector = self.client.feature_extraction(
-            text,
-            model=self.model
-        )
-
-        return vector.tolist()
-
-
-embedding = HFAPIEmbeddings()
+# embedding model (Free - Google Gemini Embedding)
+embedding = GoogleGenerativeAIEmbeddings(
+    model="models/gemini-embedding-001",
+    google_api_key=os.getenv("GOOGLE_API_KEY")
+)
 
 # retriever
 # Keep the retriever in memory so it is not rebuilt for every Q&A request.
